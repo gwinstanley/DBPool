@@ -1,0 +1,10 @@
+DBPool 5.0
+Copyright (c) 2001-2013 Giles Winstanley
+
+Logging support is provided by the Apache Common Logging library which is open source software,
+copyright by the Apache Software Foundation (http://www.apache.org/).
+The original software is available from
+    http://commons.apache.org/logging/
+and the license terms are available from
+    http://www.apache.org/licenses/LICENSE-2.0
+or in the file LICENSE-JCL.txt
