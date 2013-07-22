@@ -353,6 +353,8 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
 
   /**
    * Gets a {@link Connection} from the pool.
+   * @return a connection from the pool, or {@code null} if nothing available
+   * @throws SQLException if there is an error creating a new connection
    */
   public Connection getConnection() throws SQLException
   {
@@ -385,10 +387,17 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
   }
 
   /**
-   * Gets a {@link Connection} from the pool.
+   * Gets a {@link Connection} from the pool, waiting a maximum of
+   * {@code timeout} milliseconds for one to become available,
+   * returning {@code null} if not.
+   * @param timeout timeout value in milliseconds
+   * @return item from the pool, or {@code null} if nothing available within timeout period
+   * @throws SQLException if there is an error getting a connection
    */
   public Connection getConnection(long timeout) throws SQLException
   {
+    if (timeout < 0)
+      throw new IllegalArgumentException("Invalid timeout value specified: " + timeout);
     try
     {
       CacheConnection cc = super.checkOut(timeout);

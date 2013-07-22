@@ -222,7 +222,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   }
 
   /**
-   * Deregisters a registered shutdown hook for this ConnectionPoolManager instance.
+   * Unregisters a registered shutdown hook for this ConnectionPoolManager instance.
    */
   public synchronized void removeShutdownHook()
   {
@@ -538,17 +538,17 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
 
     synchronized(this)
     {
-      // Destroy cleaner thread.
-      if (cleaner != null)
-      {
-        cleaner.halt();
-        cleaner = null;
-      }
       // Destroy init thread.
       if (initer != null)
       {
         initer.halt();
         initer = null;
+      }
+      // Destroy cleaner thread.
+      if (cleaner != null)
+      {
+        cleaner.halt();
+        cleaner = null;
       }
 
       int releasedCount = 0, failedCount = 0;
@@ -620,8 +620,11 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       // Destroy event dispatch thread.
       listeners.clear();
       eventDispatcher.halt();
-      try { eventDispatcher.join(); }
-      catch (InterruptedException ix) { log_warn("Interrupted during halting of event dispatch thread", ix); }
+      if (!forced)
+      {
+        try { eventDispatcher.join(); }
+        catch (InterruptedException ix) { log_warn("Interrupted during halting of event dispatch thread", ix); }
+      }
       eventDispatcher = null;
     }
     // Allow sub-class to clean up.
@@ -1274,6 +1277,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       this.setName("Cleaner-thread-" + Integer.toString(cleanerCount++));
       this.pool = pool;
       this.interval = interval;
+      this.setDaemon(true);
     }
 
     @Override
@@ -1367,6 +1371,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
         this.num = Math.min(getMaxSize(), Math.max(num, 0));
       else
         this.num = Math.min(getMaxPool(), Math.max(num, 0));
+      this.setDaemon(true);
     }
 
     /**
@@ -1444,13 +1449,14 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
     private Releaser(ObjectPool pool)
     {
       instance = pool;
+      setDaemon(true);
     }
 
     @Override
     public void run()
     {
       if (!instance.isReleased())
-        instance.release();
+        instance.releaseForcibly();
     }
   }
 

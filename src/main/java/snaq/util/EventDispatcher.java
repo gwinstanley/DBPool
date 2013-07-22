@@ -75,6 +75,7 @@ public class EventDispatcher<L extends EventListener, E extends EventObject> ext
   {
     this.listeners = listeners;
     this.notifier = notifier;
+    this.setDaemon(true);
   }
 
   @Override

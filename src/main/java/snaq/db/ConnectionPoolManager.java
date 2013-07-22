@@ -377,12 +377,17 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
    */
   public static synchronized ConnectionPoolManager getInstance(String propsFile, String enc) throws IOException
   {
+    if (propsFile == null)
+      throw new IllegalArgumentException();
     String s = propsFile.startsWith("/") ? propsFile : ("/" + propsFile);
     Object o = managers.get(s);
     ConnectionPoolManager cpm = (o != null) ? (ConnectionPoolManager)o : null;
     if (cpm == null || cpm.isReleased())
     {
-      cpm = new ConnectionPoolManager(loadProperties(s, enc), propsFile);
+      Properties props = loadProperties(s, enc);
+      if (props == null)
+        throw new FileNotFoundException("Unable to find properties file: " + propsFile);
+      cpm = new ConnectionPoolManager(props, propsFile);
       cpm.instanceKey = s;
       managers.put(cpm.instanceKey, cpm);
       cpm.fireInstancesChangedEvent();
@@ -424,10 +429,9 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
       catch (IOException iox)
       {
         if (iox instanceof FileNotFoundException)
-          System.err.println("Unable to find the properties file " + propsFile.getAbsolutePath());
+          loggerShared.warn("Unable to find the properties file " + propsFile.getAbsolutePath(), iox);
         else
-          System.err.println("Error loading the properties file " + propsFile.getAbsolutePath());
-        iox.printStackTrace();
+          loggerShared.warn("Error loading the properties file " + propsFile.getAbsolutePath(), iox);
         return null;
       }
     }
@@ -507,8 +511,7 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
     }
     catch (IOException iox)
     {
-      System.err.println("Unable to load the properties file: propsFile");
-      iox.printStackTrace();
+      loggerShared.warn("Unable to find the properties file " + propsFile.getAbsolutePath(), iox);
       throw iox;
     }
     return props;
@@ -535,6 +538,8 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
   static Properties loadProperties(String propsResource, String enc) throws IOException
   {
     InputStream is = ConnectionPoolManager.class.getResourceAsStream(propsResource);
+    if (is == null)
+      throw new FileNotFoundException("Unable to find properties file: " + propsResource);
     Properties props = null;
     try
     {
@@ -542,8 +547,7 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
     }
     catch (IOException iox)
     {
-      System.err.println("Unable to load the properties file. Make sure " + propsResource + " is in the CLASSPATH.");
-      iox.printStackTrace();
+      loggerShared.warn("Unable to load the properties file. Make sure " + propsResource + " is in the CLASSPATH.", iox);
       throw iox;
     }
     return props;
@@ -552,17 +556,13 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
   /**
    * Loads and returns a {@code Properties} object from an {@code InputStream}.
    * This method also aims to improve properties file resilience by loading
-   * property names/values in the UTF-8 character encoding, then selectively
-   * removing case-sensitivity from property keys.
-   * (It does not change the case of any additional properties specified for
-   * the JDBC Driver, or the names of pools.)
+   * property names/values in the UTF-8 character encoding.
    * @param is InputStream from which load Properties
    * @param enc character encoding to use for properties
    */
   private static Properties loadProperties(InputStream is, String enc) throws IOException
   {
-    Properties propsO = new Properties();  // Original properties.
-    Properties propsP = new Properties();  // Processed properties.
+    Properties props = new Properties();
     BufferedReader br = null;
     try
     {
@@ -578,28 +578,8 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
         {
           String key = line.substring(0, epos).trim();
           String val = line.substring(epos + 1).trim();
-          propsO.setProperty(key, val);
+          props.setProperty(key, val);
         }
-      }
-
-      // Process non-driver properties to be case-insensitive.
-      final Pattern dp = Pattern.compile("^([^.]+)(\\.prop\\.)(.+)$", Pattern.CASE_INSENSITIVE);
-      final Pattern pp = Pattern.compile("^([^.]+)((?:\\.[^.]+)+)$");
-      for (Enumeration e = propsO.propertyNames(); e.hasMoreElements();)
-      {
-        String key = (String)e.nextElement();
-        String newkey = null;
-        Matcher mdp = dp.matcher(key);
-        Matcher mpp = pp.matcher(key);
-        if (mdp.matches())
-          newkey = mdp.group(1) + mdp.group(2).toLowerCase() + mdp.group(3);
-        else if (mpp.matches())
-          newkey = mpp.group(1) + mpp.group(2).toLowerCase();
-
-        if (newkey != null && !key.equals(newkey))
-          propsP.put(newkey, propsO.getProperty(key));
-        else
-          propsP.put(key, propsO.getProperty(key));
       }
     }
     finally
@@ -611,9 +591,60 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
     if (loggerShared.isTraceEnabled())
     {
       final String LSEP = System.getProperty("line.separator");
-      SortedSet<Object> keys = new TreeSet<Object>(propsP.keySet());
+      SortedSet<Object> keys = new TreeSet<Object>(props.keySet());
       StringBuilder sb = new StringBuilder();
       sb.append("Properties read:");
+      sb.append(LSEP);
+      for (Object o : keys)
+      {
+        String key = (String)o;
+        sb.append('\t');
+        sb.append(key);
+        sb.append('=');
+        sb.append(props.getProperty(key));
+        sb.append(LSEP);
+      }
+      loggerShared.trace(sb.toString());
+    }
+    return props;
+  }
+
+  /**
+   * Processes the specified {@code Properties} instance to facilitate
+   * parsing of {@code ConnectionPool} definitions.
+   * It simply removes case-sensitivity from all property keys
+   * (It does not change the case of any additional properties specified for
+   * the JDBC Driver, or the names of pools.)
+   * @param props Properties instance to be processed
+   */
+  private static Properties processProperties(Properties props)
+  {
+    Properties propsP = new Properties();
+    // Process non-driver properties to be case-insensitive.
+    final Pattern dp = Pattern.compile("^([^.]+)(\\.prop\\.)(.+)$", Pattern.CASE_INSENSITIVE);
+    final Pattern pp = Pattern.compile("^([^.]+)((?:\\.[^.]+)+)$");
+    for (Enumeration e = props.propertyNames(); e.hasMoreElements();)
+    {
+      String key = (String)e.nextElement();
+      String newkey = null;
+      Matcher mdp = dp.matcher(key);
+      Matcher mpp = pp.matcher(key);
+      if (mdp.matches())
+        newkey = mdp.group(1) + mdp.group(2).toLowerCase() + mdp.group(3);
+      else if (mpp.matches())
+        newkey = mpp.group(1).toLowerCase() + mpp.group(2).toLowerCase();
+
+      if (newkey != null && !key.equals(newkey))
+        propsP.put(newkey, props.getProperty(key));
+      else
+        propsP.put(key, props.getProperty(key));
+    }
+    if (loggerShared.isTraceEnabled())
+    {
+      final String LSEP = System.getProperty("line.separator");
+      SortedSet<Object> keys = new TreeSet<Object>(propsP.keySet());
+      StringBuilder sb = new StringBuilder();
+      sb.append("Properties processed:");
       sb.append(LSEP);
       for (Object o : keys)
       {
@@ -632,8 +663,9 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
   /**
    * Initializes this instance with values from the given {@code Properties} object.
    */
-  private void init(Properties props)
+  private void init(Properties p)
   {
+    Properties props = processProperties(p);
     // Create a unique logger if a name is specified, otherwise use shared one.
     name = props.getProperty("name");
     if (name == null || name.equals(""))
@@ -703,7 +735,10 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
   }
 
   /**
-   * Creates instances of {@link ConnectionPool} based on the {@link Properties} object.
+   * Creates instances of {@link ConnectionPool} based on the {@link Properties}
+   * object. The supplied properties have been pre-processed by the
+   * {@link #loadProperties(InputStream, String)} method to ensure the
+   * property keys are case-insensitive, where applicable.
    * @param props the connection pool properties
    */
   private void createPools(Properties props)
@@ -714,8 +749,8 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
       if (propKey.endsWith(".url"))
       {
         String poolName = propKey.substring(0, propKey.lastIndexOf("."));
-        String url = props.getProperty(poolName + ".url");
-        if (url == null)
+        String url = props.getProperty(propKey);
+        if (url == null || "".equals(url.trim()))
         {
           log_warn("No URL specified for " + poolName);
           continue;
@@ -769,26 +804,35 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
 
         int minPool, maxPool, maxSize, idleTimeout;
         // Validate minpool.
-        try { minPool = Integer.valueOf(pMinPool).intValue(); }
+        try
+        {
+          minPool = Integer.parseInt(pMinPool);
+        }
         catch (NumberFormatException nfx)
         {
           log_warn("Invalid minpool value " + pMinPool + " for " + poolName);
           minPool = 0;
         }
         // Validate maxpool.
-        try { maxPool = Integer.valueOf(pMaxPool).intValue(); }
+        try
+        {
+          maxPool = Integer.parseInt(pMaxPool);
+        }
         catch (NumberFormatException nfx)
         {
           log_warn("Invalid maxpool value " + pMaxPool + " for " + poolName);
           maxPool = 0;
         }
         // Validate maxsize.
-        try { maxSize = Integer.valueOf(pMaxSize).intValue(); }
+        try
+        {
+          maxSize = Integer.parseInt(pMaxSize);
+        }
         catch (NumberFormatException nfx)
         {
           try
           {
-            maxSize = Integer.valueOf(pMaxConn).intValue();
+            maxSize = Integer.parseInt(pMaxConn);
             log_warn("maxconn property has been deprecated; use maxsize instead");
           }
           catch (NumberFormatException nfx2)
@@ -802,19 +846,25 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
         }
         // Validate init (NOTE: 'init' property is deprecated).
         int initSize = 0;
-        try { initSize = Integer.valueOf(pInit).intValue(); }
+        try
+        {
+          initSize = Integer.parseInt(pInit);
+        }
         catch (NumberFormatException nfx)
         {
           log_warn("Invalid init value " + pInit + " for " + poolName);
           initSize = 0;
         }
         // Validate idle timeout.
-        try { idleTimeout = Integer.valueOf(pIdleTimeout).intValue(); }
+        try
+        {
+          idleTimeout = Integer.parseInt(pIdleTimeout);
+        }
         catch (NumberFormatException nfx)
         {
           try
           {
-            idleTimeout = Integer.valueOf(pExpiry).intValue();
+            idleTimeout = Integer.parseInt(pExpiry);
             log_warn("expiry property has been deprecated; use idleTimeout instead");
           }
           catch (NumberFormatException nfx2)
@@ -1109,12 +1159,15 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
    * (This is only provided as a convenience method to allow fine-tuning in
    * exceptional circumstances.)
    * @param name pool name as defined in the properties file
-   * @return the pool or {@code null}
+   * @return the pool, or {@code null} if the named pool could not be found
+   * @throws IllegalArgumentException if the specified name is not a valid pool name (i.e. null)
    */
   public ConnectionPool getPool(String name)
   {
     if (released)
       throw new RuntimeException("Pool manager no longer valid for use");
+    if (name == null || "".equals(name))
+      throw new IllegalArgumentException("Invalid pool name specified: " + name);
     return pools.get(name);
   }
 
@@ -1137,16 +1190,19 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
    * reached, a new connection is created.
    * @param name {@code ConnectionPool} name as defined in the properties file
    * @return a {@code Connection}, or {@code null} if unable to obtain one
+   * @throws IllegalArgumentException if the specified name is not a valid pool name
+   * @throws SQLException if such an exception is raised by {@link ConnectionPool#getConnection()}
    */
   public Connection getConnection(String name) throws SQLException
   {
     if (released)
       throw new RuntimeException("Pool manager no longer valid for use");
-
+    if (name == null || "".equals(name))
+      throw new IllegalArgumentException("Invalid pool name specified: " + name);
     ConnectionPool pool = pools.get(name);
-    if (pool != null)
-      return pool.getConnection();
-    return null;
+    if (pool == null)
+      throw new IllegalArgumentException("Pool " + name + " not found");
+    return pool.getConnection();
   }
 
   /**
@@ -1155,18 +1211,23 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
    * reached, a new connection is created. If the max number has been
    * reached, waits until one is available or the specified time has elapsed.
    * @param name pool name as defined in the properties file
-   * @param time number of milliseconds to wait
+   * @param timeout number of milliseconds to wait
    * @return the {@code Connection} or {@code null}
+   * @throws IllegalArgumentException if the specified name is not a valid pool name
+   * @throws SQLException if such an exception is raised by {@link ConnectionPool#getConnection(long)}
    */
-  public Connection getConnection(String name, long time) throws SQLException
+  public Connection getConnection(String name, long timeout) throws SQLException
   {
     if (released)
       throw new RuntimeException("Pool manager no longer valid for use");
-
+    if (name == null || "".equals(name))
+      throw new IllegalArgumentException("Invalid pool name specified: " + name);
+    if (timeout < 0)
+      throw new IllegalArgumentException("Invalid timeout value specified: " + timeout);
     ConnectionPool pool = pools.get(name);
-    if (pool != null)
-      return pool.getConnection(time);
-    return null;
+    if (pool == null)
+      throw new IllegalArgumentException("Pool " + name + " not found");
+    return pool.getConnection(timeout);
   }
 
   /**
@@ -1356,6 +1417,7 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
 
     private Releaser()
     {
+      setDaemon(true);
     }
 
     private Releaser(ConnectionPoolManager cpm)

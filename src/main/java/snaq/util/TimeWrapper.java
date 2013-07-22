@@ -48,24 +48,27 @@ public class TimeWrapper<E>
   /** Object to be held in this wrapper instance. */
   private E obj;
   /** Time at which this object expires. */
-  private long expiryTime = 0;
+  private long expiryTime = 0L;
   /** Last access time (updated by method call). */
-  private long accessed = System.currentTimeMillis();
+  private long accessed;
 
   /**
    * Creates a new wrapped object.
    * @param obj object to be referenced
-   * @param expiryTime object's idle time before death in milliseconds (0 - eternal)
+   * @param expiry object's idle time before death in milliseconds (0 - eternal)
    */
-  public TimeWrapper(E obj, long expiryTime)
+  public TimeWrapper(E obj, long expiry)
   {
     this.obj = obj;
-    if (expiryTime > 0)
-      this.expiryTime = System.currentTimeMillis() + expiryTime;
+    this.accessed = System.currentTimeMillis();
+    if (expiry > 0)
+      this.expiryTime = this.accessed + expiry;
   }
 
   /**
    * Returns the object referenced by this wrapper.
+   * NOTE: this does not update the last access time, which must be done
+   * explicitly with the {@link #updateAccessed()} method.
    */
   public E getObject()
   {
@@ -85,14 +88,14 @@ public class TimeWrapper<E>
    * Sets idle time allowed before this item expires.
    * @param expiryTime idle time before expiry (0 = eternal)
    */
-  synchronized void setLiveTime(long expiryTime)
+  synchronized void setLiveTime(long expiry)
   {
-    if (expiryTime < 0)
+    if (expiry < 0)
       throw new IllegalArgumentException("Invalid expiry time");
-    else if (expiryTime > 0)
-      this.expiryTime = System.currentTimeMillis() + expiryTime;
+    else if (expiry > 0)
+      this.expiryTime = System.currentTimeMillis() + expiry;
     else
-      expiryTime = 0;
+      this.expiryTime = 0;
   }
 
   /**
@@ -105,6 +108,8 @@ public class TimeWrapper<E>
 
   /**
    * Returns the time this object was last accessed.
+   * NOTE: this does not update the last access time, which must be done
+   * explicitly with the {@link #updateAccessed()} method.
    */
   long getAccessed()
   {

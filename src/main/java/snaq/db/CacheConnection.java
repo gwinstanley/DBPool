@@ -340,6 +340,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
           {
             cst = x;
             it.remove();
+            break;
           }
           x.setChecking(false);
         }
@@ -412,6 +413,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
             {
               cps = x;
               it.remove();
+              break;
             }
             x.setChecking(false);
           }
@@ -488,6 +490,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
             {
               ccs = x;
               it.remove();
+              break;
             }
             x.setChecking(false);
           }
@@ -727,17 +730,35 @@ public final class CacheConnection implements Connection, StatementListener, Reu
     // If auto-commit is disabled, roll-back changes, and restore auto-commit.
     if (!getAutoCommit())
     {
-      try { rollback(); }
-      catch (SQLException sqlx) { log_warn(pool.getName() + ": " + sqlx.getMessage(), sqlx); }
+      try
+      {
+        rollback();
+      }
+      catch (SQLException sqlx)
+      {
+        log_warn(pool.getName() + ": " + sqlx.getMessage(), sqlx);
+      }
       setAutoCommit(true);
     }
     // Clear connection warnings.
-    clearWarnings();
+    try
+    {
+      clearWarnings();
+    }
+    catch (SQLFeatureNotSupportedException sfnsx)
+    {
+    }
 
     // Clear type map entries.
-    Map tm = getTypeMap();
-    if (tm != null)
-      tm.clear();
+    try
+    {
+      Map<String, Class<?>> tm = getTypeMap();
+      if (tm != null)
+        tm.clear();
+    }
+    catch (SQLFeatureNotSupportedException sfnsx)
+    {
+    }
   }
 
   /**
@@ -976,17 +997,53 @@ public final class CacheConnection implements Connection, StatementListener, Reu
     open = false;
     List<SQLException> list = new ArrayList<SQLException>();
 
-    try { flushSpareStatements(); flushOpenStatements(); }
-    catch (SQLException e) { list.add(e); }
-    try { flushSparePreparedStatements(); flushOpenPreparedStatements(); }
-    catch (SQLException e) { list.add(e); }
-    try { flushSpareCallableStatements(); flushOpenCallableStatements(); }
-    catch (SQLException e) { list.add(e); }
-    try { flushOpenNonCachableStatements(); }
-    catch (SQLException e) { list.add(e); }
+    try
+    {
+      flushSpareStatements();
+      flushOpenStatements();
+    }
+    catch (SQLException e)
+    {
+      list.add(e);
+    }
 
-    try { con.close(); }
-    catch (SQLException e) { list.add(e); }
+    try
+    {
+      flushSparePreparedStatements();
+      flushOpenPreparedStatements();
+    }
+    catch (SQLException e)
+    {
+      list.add(e);
+    }
+
+    try
+    {
+      flushSpareCallableStatements();
+      flushOpenCallableStatements();
+    }
+    catch (SQLException e)
+    {
+      list.add(e);
+    }
+
+    try
+    {
+      flushOpenNonCachableStatements();
+    }
+    catch (SQLException e)
+    {
+      list.add(e);
+    }
+
+    try
+    {
+      con.close();
+    }
+    catch (SQLException e)
+    {
+      list.add(e);
+    }
 
     if (!list.isEmpty())
     {

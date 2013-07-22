@@ -1,4 +1,4 @@
-DBPool 5.0
+DBPool 5.1
 Copyright (c) 2001-2013 Giles Winstanley
 
 Logging support is provided by the Apache Common Logging library which is open source software,
