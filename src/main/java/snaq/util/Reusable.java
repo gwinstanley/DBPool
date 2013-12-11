@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -54,6 +54,7 @@ public interface Reusable
 
   /**
    * Determines if this object is &quot;dirty&quot; (i.e. unable to be recycled).
+   * @return true if object is unable to be recycled, false otherwise
    */
   public boolean isDirty();
 }

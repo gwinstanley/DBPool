@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -48,9 +48,10 @@ public class RotDecoder implements PasswordDecoder
 {
   private static final int offset = 13;
 
+	@Override
   public char[] decode(String encoded)
   {
-    StringBuffer sb = new StringBuffer(encoded);
+    StringBuilder sb = new StringBuilder(encoded);
     for (int a = 0; a < sb.length(); a++)
     {
       char c = sb.charAt(a);
@@ -78,8 +79,8 @@ public class RotDecoder implements PasswordDecoder
       System.exit(1);
     }
     RotDecoder x = new RotDecoder();
-    for (int i = 0; i < args.length; i++)
-      System.out.print(new String(x.decode(args[i])) + " ");
+    for (String arg : args)
+      System.out.print(new String(x.decode(arg)) + " ");
     System.out.println();
   }
 }

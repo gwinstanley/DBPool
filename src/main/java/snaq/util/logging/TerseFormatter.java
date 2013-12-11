@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -56,15 +56,18 @@ import java.util.logging.SimpleFormatter;
  * <pre>
  *     &lt;handler&gt;.formatter=snaq.util.logging.TerseFormatter
  * </pre>
+<p>NOTE: this class is NOT thread-safe.
  *
  * @author Giles Winstanley
+ * @deprecated This class may be removed in future, and users are encouraged to use SLF4J logging.
  */
+@Deprecated
 public class TerseFormatter extends SimpleFormatter
 {
   /** Platform line-separator. */
   private final static String LSEP = System.getProperty("line.separator");
   /** Date instance for re-use in date/time formatting. */
-  private Date date = new Date();
+  private final Date date = new Date();
   /** {@code DateFormat} instance for date/time formatting. */
   private DateFormat dateFormat;
   /** Separator string (between log-entry info and log message). */
@@ -72,7 +75,7 @@ public class TerseFormatter extends SimpleFormatter
   /** Log entry formatting string. */
   private String formatString;
   /** Argument array for log entry message formatting. */
-  private String args[] = new String[5];
+  private final String args[] = new String[5];
   /** Determines whether to show class names in log entries. */
   private boolean showClass;
   /** Determines whether to show short class names in log entries. */
@@ -124,12 +127,18 @@ public class TerseFormatter extends SimpleFormatter
    * Sets the {@code DateFormat} instance to use for formatting log entries.
    * @param df {@code DateFormat} instance to use
    */
-  public void setDateFormat(DateFormat df) { this.dateFormat = df; }
+  public void setDateFormat(DateFormat df)
+  {
+    this.dateFormat = df;
+  }
 
   /**
    * @return {@code DateFormat} instance used for formatting log entries.
    */
-  public DateFormat getDateFormat() { return dateFormat; }
+  public DateFormat getDateFormat()
+  {
+    return dateFormat;
+  }
 
   /**
    * Sets the separator string between the date and log message (default &quot;: &quot;).
@@ -192,9 +201,10 @@ public class TerseFormatter extends SimpleFormatter
       try
       {
         StringWriter sw = new StringWriter();
-        PrintWriter pw = new PrintWriter(sw);
-        record.getThrown().printStackTrace(pw);
-        pw.close();
+        try (PrintWriter pw = new PrintWriter(sw))
+        {
+          record.getThrown().printStackTrace(pw);
+        }
         sb.append(sw.toString());
       }
       catch (Exception ex)

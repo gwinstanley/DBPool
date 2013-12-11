@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -48,6 +48,8 @@ import java.util.EventObject;
  * of this interface is called.
  *
  * @author Giles Winstanley
+ * @param <L> class type of event listener
+ * @param <E> class type of event object
  */
 public interface EventNotifier<L extends EventListener, E extends EventObject>
 {
@@ -57,8 +59,10 @@ public interface EventNotifier<L extends EventListener, E extends EventObject>
    * any exceptions, as it is called asynchronously by the
    * {@link EventDispatcher} thread. This includes cases of
    * {@link RuntimeException} which should be caught and dealt with,
-   * otherwise the default behaiour is simply to print the stacktrace to
+   * otherwise the default behaviour is simply to print the stacktrace to
    * {@link System#err}.
+   * @param listener listener to notify
+   * @param event event for which listener is to be notified
    */
   void notifyListener(L listener, E event);
 }

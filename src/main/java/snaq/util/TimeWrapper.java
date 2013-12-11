@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -40,13 +40,14 @@ package snaq.util;
 /**
  * Time-tracking wrapper class for an object.
  * 
+ * @param <E> class type of object to wrap
  * @see snaq.util.ObjectPool
  * @author Giles Winstanley
  */
 public class TimeWrapper<E>
 {
   /** Object to be held in this wrapper instance. */
-  private E obj;
+  private final E obj;
   /** Time at which this object expires. */
   private long expiryTime = 0L;
   /** Last access time (updated by method call). */
@@ -69,6 +70,7 @@ public class TimeWrapper<E>
    * Returns the object referenced by this wrapper.
    * NOTE: this does not update the last access time, which must be done
    * explicitly with the {@link #updateAccessed()} method.
+   * @return The object referenced by this wrapper
    */
   public E getObject()
   {
@@ -77,7 +79,7 @@ public class TimeWrapper<E>
 
   /**
    * Whether this item has expired.
-   * (Expiry of zero indicates that it will never expire.)
+   * @return true if item has expired, false otherwise
    */
   public synchronized boolean isExpired()
   {
@@ -111,7 +113,7 @@ public class TimeWrapper<E>
    * NOTE: this does not update the last access time, which must be done
    * explicitly with the {@link #updateAccessed()} method.
    */
-  long getAccessed()
+  synchronized long getAccessed()
   {
     return accessed;
   }

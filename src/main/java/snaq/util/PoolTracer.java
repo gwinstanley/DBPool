@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -52,11 +52,12 @@ import java.util.Properties;
  * The default date format is local time in ISO 8601 compatible format.
  *
  * @author Giles Winstanley
+ * @param <T> class type of pooled objects
  */
-public class PoolTracer implements ObjectPoolListener
+public class PoolTracer<T extends Reusable> implements ObjectPoolListener<T>
 {
   /** Logging utility. */
-  private LogUtil logger = new LogUtil();
+  private final LogUtil logger = new LogUtil();
   /** Default DateFormat instance. */
   private static final DateFormat DEFAULT_DATEFORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss,SSS");
   /** Default format string for log messages. */
@@ -65,7 +66,7 @@ public class PoolTracer implements ObjectPoolListener
           "minpool={1,number,#}, " +
           "maxpool={2,number,#}, " +
           "maxsize={3,number,#}, " +
-          "expiry={4,number,#}, " +
+          "idleTimeout={4,number,#}, " +
           "out={5,number,#}, " +
           "free={6,number,#}, " +
           "hitRate={8,number,0.0##%}, " +
@@ -80,7 +81,7 @@ public class PoolTracer implements ObjectPoolListener
    * @param logWriter {@code PrintWriter} to use for writing trace activity
    * @param closeOnExit whether to close the {@code PrintWriter} on release
    */
-  public PoolTracer(ObjectPool pool, PrintWriter logWriter, boolean closeOnExit)
+  public PoolTracer(ObjectPool<T> pool, PrintWriter logWriter, boolean closeOnExit)
   {
     logger.setLog(logWriter, closeOnExit);
     logger.setDateFormat(DEFAULT_DATEFORMAT);
@@ -94,8 +95,9 @@ public class PoolTracer implements ObjectPoolListener
    * for writing the log.
    * @param pool {@code ObjectPool} for which to trace activity
    * @param file {@code File} to which to log trace activity
+   * @throws FileNotFoundException
    */
-  public PoolTracer(ObjectPool pool, File file) throws FileNotFoundException
+  public PoolTracer(ObjectPool<T> pool, File file) throws FileNotFoundException
   {
     this(pool, new PrintWriter(file), true);
   }
@@ -104,8 +106,9 @@ public class PoolTracer implements ObjectPoolListener
    * Creates a new ObjectPoolAudit which logs to the specified File.
    * @param pool {@code ObjectPool} for which to trace activity
    * @param filename name of file to which to log trace activity
+   * @throws FileNotFoundException
    */
-  public PoolTracer(ObjectPool pool, String filename) throws FileNotFoundException
+  public PoolTracer(ObjectPool<T> pool, String filename) throws FileNotFoundException
   {
     this(pool, new PrintWriter(filename), true);
   }
@@ -115,6 +118,7 @@ public class PoolTracer implements ObjectPoolListener
    * Note: if the file already exists it is truncated to zero-length, then used
    * for writing the log.
    * @param props {@code Properties} defining trace activity
+   * @throws FileNotFoundException
    */
   public PoolTracer(Properties props) throws FileNotFoundException
   {
@@ -142,7 +146,7 @@ public class PoolTracer implements ObjectPoolListener
   private static Properties convertToLC(Properties p)
   {
     Properties props = new Properties();
-    for (Enumeration e = p.propertyNames(); e.hasMoreElements();)
+    for (Enumeration<?> e = p.propertyNames(); e.hasMoreElements();)
     {
       String key = (String)e.nextElement();
       props.put(key.toLowerCase(), p.getProperty(key));
@@ -169,7 +173,7 @@ public class PoolTracer implements ObjectPoolListener
    * <li>{1} - minpool (integer)</li>
    * <li>{2} - maxpool (integer)</li>
    * <li>{3} - maxsize (integer)</li>
-   * <li>{4} - expiry time (long)</li>
+   * <li>{4} - idle timeout (long)</li>
    * <li>{5} - items checked out (integer)</li>
    * <li>{6} - free item count (integer)</li>
    * <li>{7} - current pool size (i.e. {5}+{6}, integer)</li>
@@ -178,17 +182,18 @@ public class PoolTracer implements ObjectPoolListener
    * </ul>
    * <p>The default format is as follows:</p>
    * <pre style="font-size:80%;">
-   * {0}: minpool={1,number,#}, maxpool={2,number,#}, maxsize={3,number,#}, expiry={4,number,#}, out={5,number,#}, free={6,number,#}, hitRate={8,number,0.0##%}
+   * {0}: minpool={1,number,#}, maxpool={2,number,#}, maxsize={3,number,#}, idleTimeout={4,number,#}, out={5,number,#}, free={6,number,#}, hitRate={8,number,0.0##%}
    * </pre>
    * @param mf {@code MessageFormat} instance to use for formatting log messages
    */
-  public void setMessageFormat(MessageFormat mf)
+  public final void setMessageFormat(MessageFormat mf)
   {
     msgFormat = (mf == null) ? new MessageFormat(DEFAULT_FORMAT_STRING) : mf;
   }
 
   /**
    * Returns the current {@code MessageFormat} instance used for formatting log messages.
+   * @return The current {@code MessageFormat} instance used for formatting log messages
    */
   public MessageFormat getMessageFormatInstance()
   {
@@ -197,8 +202,9 @@ public class PoolTracer implements ObjectPoolListener
 
   /**
    * Writes an entry containing the pool statistics to the log file.
+   * @param evt event instance to log
    */
-  protected void logPoolStats(ObjectPoolEvent evt)
+  protected void logPoolStats(ObjectPoolEvent<T> evt)
   {
     Object[] o = new Object[10];
     o[0] = evt.getPool().getName();
@@ -215,34 +221,62 @@ public class PoolTracer implements ObjectPoolListener
     logger.log(msg);
   }
 
-  public void poolInitCompleted(ObjectPoolEvent evt) {}
-  public void validationError(ObjectPoolEvent evt) {}
-  public void maxPoolLimitReached(ObjectPoolEvent evt) {}
-  public void maxPoolLimitExceeded(ObjectPoolEvent evt) {}
-  public void maxSizeLimitReached(ObjectPoolEvent evt) {}
-  public void maxSizeLimitError(ObjectPoolEvent evt) {}
+  @Override
+  public void poolInitCompleted(ObjectPoolEvent<T> evt)
+  {
+  }
 
-  public void poolCheckIn(ObjectPoolEvent evt)
+  @Override
+  public void validationError(ObjectPoolEvent<T> evt)
+  {
+  }
+
+  @Override
+  public void maxPoolLimitReached(ObjectPoolEvent<T> evt)
+  {
+  }
+
+  @Override
+  public void maxPoolLimitExceeded(ObjectPoolEvent<T> evt)
+  {
+  }
+
+  @Override
+  public void maxSizeLimitReached(ObjectPoolEvent<T> evt)
+  {
+  }
+
+  @Override
+  public void maxSizeLimitError(ObjectPoolEvent<T> evt)
+  {
+  }
+
+  @Override
+  public void poolCheckIn(ObjectPoolEvent<T> evt)
   {
     logPoolStats(evt);
   }
 
-  public void poolCheckOut(ObjectPoolEvent evt)
+  @Override
+  public void poolCheckOut(ObjectPoolEvent<T> evt)
   {
     logPoolStats(evt);
   }
 
-  public void poolParametersChanged(ObjectPoolEvent evt)
+  @Override
+  public void poolParametersChanged(ObjectPoolEvent<T> evt)
   {
     logPoolStats(evt);
   }
 
-  public void poolFlushed(ObjectPoolEvent evt)
+  @Override
+  public void poolFlushed(ObjectPoolEvent<T> evt)
   {
     logPoolStats(evt);
   }
 
-  public void poolReleased(ObjectPoolEvent evt)
+  @Override
+  public void poolReleased(ObjectPoolEvent<T> evt)
   {
     logPoolStats(evt);
     evt.getPool().removeObjectPoolListener(this);

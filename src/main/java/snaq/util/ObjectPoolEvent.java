@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -41,13 +41,14 @@ import java.util.EventObject;
 
 /**
  * Event for {@link ObjectPool} instances.
- * Convenience methods are available for determining the type fo the event,
+ * Convenience methods are available for determining the type of the event,
  * and the event is capable of keeping shadow copies of the pool's vital
  * parameters at the time the event was issued, for reference to listeners.
- * 
+ *
  * @author Giles Winstanley
+ * @param <T> class type of referring ObjectPool
  */
-public class ObjectPoolEvent extends EventObject
+public class ObjectPoolEvent<T extends Reusable> extends EventObject
 {
   public static final int INIT_COMPLETED = 1;
   public static final int CHECKOUT = 2;
@@ -62,7 +63,7 @@ public class ObjectPoolEvent extends EventObject
   public static final int POOL_RELEASED = 11;
 
   /** Event type of this instance. */
-  private int type;
+  private final int type;
 
   // Shadow variables to hold copies at time of event dispatch.
   private int minPool;
@@ -76,8 +77,10 @@ public class ObjectPoolEvent extends EventObject
 
   /**
    * Creates a new {@code PoolEvent}.
+   * @param pool ObjectPool for which to create event
+   * @param type type of event to create
    */
-  public ObjectPoolEvent(ObjectPool pool, int type)
+  public ObjectPoolEvent(ObjectPool<T> pool, int type)
   {
     super(pool);
     this.type = type;
@@ -85,16 +88,26 @@ public class ObjectPoolEvent extends EventObject
 
   /**
    * Returns the pool for which this event was created.
+   * @return The pool for which this event was created
    */
-  public ObjectPool getPool() { return (ObjectPool)getSource(); }
+  @SuppressWarnings("unchecked")
+  public ObjectPool<T> getPool()
+  {
+    return (ObjectPool<T>)getSource();
+  }
 
   /**
    * Returns the type of event this object represents.
+   * @return The type of event this object represents
    */
-  public int getType() { return type; }
+  public int getType()
+  {
+    return type;
+  }
 
   /**
    * Returns the type of event this object represents as a string.
+   * @return The type of event this object represents as a string
    */
   public String getTypeString()
   {

@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -43,8 +43,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.CopyOnWriteArrayList;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import snaq.util.logging.LogUtil;
 
 /**
@@ -93,20 +93,17 @@ import snaq.util.logging.LogUtil;
  * to the release of the pool after its final use, which should always be
  * done using either {@code release} or {@code releaseAsync}.</p>
  *
+ * @param <T> the type of reusable objects held in this pool
  * @author Giles Winstanley
  */
-public abstract class ObjectPool<T extends Reusable> implements Comparable<ObjectPool>
+public abstract class ObjectPool<T extends Reusable> implements Comparable<ObjectPool<T>>
 {
-  /** Apache Commons Logging instance for writing log entries. */
-  protected Log logger;
-  /** Identifier determining pool object selection (first-in, first-out). */
-  private static final int ACCESS_FIFO = 1;
-  /** Identifier determining pool object selection (last-in, first-out). */
-  private static final int ACCESS_LIFO = 2;
-  /** Identifier determining pool object selection (random selection). */
-  private static final int ACCESS_RANDOM = 3;
-  /** Method for selecting next object from the pool. */
-  private int accessMethod = ACCESS_LIFO;
+  /** SLF4J logger instance for writing log entries. */
+  protected Logger log;
+  /** Enumeration of selection strategies. */
+  public enum Strategy { SELECT_FIFO, SELECT_LIFO, SELECT_RANDOM }
+  /** Strategy for selecting next object from the pool. */
+  private Strategy selection = Strategy.SELECT_LIFO;
   /** Random number generator instance. */
   private Random randGen = null;
   /** Custom logging utility for non-standard log writing. */
@@ -136,7 +133,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   /** Flag determining whether object destruction occurs asynchronously. */
   private boolean asyncDestroy = false;
   /** Event dispatcher thread instance to issue events in a thread-safe manner. */
-  private EventDispatcher<ObjectPoolListener,ObjectPoolEvent> eventDispatcher;
+  private EventDispatcher<ObjectPoolListener<T>,ObjectPoolEvent<T>> eventDispatcher;
   /** Worker thread instance to clean up expired objects. */
   private Cleaner cleaner;
   /** Worker thread instance to initialize new objects. */
@@ -146,7 +143,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   /** Shared counter for naming cleaner threads. */
   private static int cleanerCount = 0;
   /** List to hold listeners for {@link ObjectPoolEvent} events. */
-  private final List<ObjectPoolListener> listeners = new CopyOnWriteArrayList<ObjectPoolListener>();
+  private final List<ObjectPoolListener<T>> listeners = new CopyOnWriteArrayList<>();
 
   /**
    * Creates new object pool.
@@ -160,14 +157,16 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   protected ObjectPool(String name, int minPool, int maxPool, int maxSize, long idleTimeout)
   {
     Class<? extends List> type = getPoolClass();
-    if (type == null || !List.class.isAssignableFrom(type))
-      throw new RuntimeException("Invalid pool class type specified: " + type.getName() + " (must implement java.util.List)");
+    if (type == null)
+      throw new NullPointerException("Invalid pool class type specified: null");
+    else if (!List.class.isAssignableFrom(type))
+      throw new IllegalArgumentException("Invalid pool class type specified: " + type.getName() + " (must implement java.util.List)");
     try
     {
       free = (List<TimeWrapper<T>>)type.newInstance();
       used = (List<T>)type.newInstance();
     }
-    catch (Exception ex)
+    catch (InstantiationException | IllegalAccessException ex)
     {
       throw new RuntimeException("Unable to instantiate pool class type: " + type.getName());
     }
@@ -175,14 +174,11 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       this.name = "unknown" + unnamedCount++;
     else
       this.name = name;
-    logger = LogFactory.getLog(getClass().getName() + "." + name);
+    log = LoggerFactory.getLogger(getClass().getName() + "." + name);
     // Set pooling parameters.
     // This starts cleaner thread too, which is potentially dangerous in a
     // constructor, so cleaner must be responsible and not change state yet.
     setParameters(minPool, maxPool, maxSize, idleTimeout);
-    // Setup event dispatch thread.
-    // Same conditions for this thread, but safe due to no state change.
-    (eventDispatcher = new EventDispatcher<ObjectPoolListener,ObjectPoolEvent>(listeners, new Notifier())).start();
   }
 
   /**
@@ -241,7 +237,10 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
     return sb.toString();
   }
 
-  /** Returns a summary string for this pool's parameters. */
+  /**
+   * Returns a summary string of the pool's parameters.
+   * @return A summary string of the pool's parameters
+   */
   public String getParametersString()
   {
     StringBuilder sb = new StringBuilder();
@@ -286,6 +285,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * of the {@code minPool} parameter, which should be used preferentially where
    * applicable. It can sometimes be useful to create initial pooled items
    * for a pool with minPool=0.</p>
+   * @param num number of objects to initialize
    */
   public final synchronized void init(int num)
   {
@@ -310,18 +310,17 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   }
 
   /**
-   * Checks out an item from the pool. If no free item
-   * is available, a new item is created unless the maximum
-   * number of items has been reached. If a free item
-   * is not valid it is removed from the pool and another
-   * is retrieved.
+   * Checks out an item from the pool.
+   * If no free item is available, a new item is created unless the maximum
+   * number of items has been reached. If a free item is not valid it is
+   * removed from the pool and another is retrieved.
    * @return item from the pool, or {@code null} if nothing available
    * @throws Exception if there is an error creating a new object
    */
-  protected final synchronized T checkOut() throws Exception
+  public final synchronized T checkOut() throws Exception
   {
     if (released)
-      throw new RuntimeException("Pool no longer valid for use");
+      throw new IllegalStateException("Pool no longer valid for use");
     int preTotal = used.size() + free.size();
 
     TimeWrapper<T> tw = null;
@@ -329,15 +328,15 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
     if (free.size() > 0)
     {
       // Get an object from the free list.
-      switch(accessMethod)
+      switch(selection)
       {
-        case ACCESS_FIFO:
+        case SELECT_FIFO:
           tw = free.remove(0);
           break;
-        case ACCESS_RANDOM:
+        case SELECT_RANDOM:
           tw = free.remove(randGen.nextInt(free.size()));
           break;
-        case ACCESS_LIFO:
+        case SELECT_LIFO:
         default:
           tw = free.remove(free.size() - 1);
       }
@@ -348,22 +347,22 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
         destroyObject(o);
         log_info("Removed invalid item from pool");
         firePoolEvent(ObjectPoolEvent.VALIDATION_ERROR);
-        switch(accessMethod)
+        switch(selection)
         {
-          case ACCESS_FIFO:
+          case SELECT_FIFO:
             tw = free.remove(0);
             break;
-          case ACCESS_RANDOM:
+          case SELECT_RANDOM:
             tw = free.remove(randGen.nextInt(free.size()));
             break;
-          case ACCESS_LIFO:
+          case SELECT_LIFO:
           default:
             tw = free.remove(free.size() - 1);
         }
         o = tw.getObject();
         valid = isValid(o);
       }
-      if (free.size() == 0 && !valid)
+      if (free.isEmpty() && !valid)
         o = null;
     }
     boolean hit = (o != null);
@@ -402,7 +401,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       if (postTotal == maxSize && postTotal > preTotal)
         firePoolEvent(ObjectPoolEvent.MAX_SIZE_LIMIT_REACHED);
     }
-    if (logger.isDebugEnabled())
+    if (log.isDebugEnabled())
     {
       String ratio = used.size() + "/" + (used.size() + free.size());
       String hitRate = " (HitRate=" + (getPoolHitRate() * 100f) + "%)";
@@ -424,7 +423,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * @return item from the pool, or {@code null} if nothing available within timeout period
    * @throws Exception if there is an error creating a new object
    */
-  protected final synchronized T checkOut(long timeout) throws Exception
+  public final synchronized T checkOut(long timeout) throws Exception
   {
     long time = System.currentTimeMillis();
     T o = checkOut();
@@ -436,7 +435,10 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
         wait(timeout);  // Wait to be notified of available item, or timeout.
         o = checkOut();  // Try again, returning null if timeout.
       }
-      catch (InterruptedException e) { log_warn("Checkout interrupted", e); }
+      catch (InterruptedException e)
+      {
+        log_warn("Checkout interrupted", e);
+      }
     }
     return o;
   }
@@ -446,7 +448,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * waiting for one to become available.
    * @param o object to check in
    */
-  protected final void checkIn(T o)
+  public final void checkIn(T o)
   {
     if (o == null)
     {
@@ -462,7 +464,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       if (!used.remove(o))
       {
         log_warn("Attempt to return item not belonging to pool");
-        throw new RuntimeException("Attempt to return item not belonging to pool " + name);
+        throw new IllegalArgumentException("Attempt to return item not belonging to pool " + name);
       }
 
       // Determine whether to recycle or destroy the object.
@@ -484,7 +486,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
           // Recycle object for next use.
           o.recycle();
           // Add object to free list.
-          free.add(new TimeWrapper<T>(o, idleTimeout));
+          free.add(new TimeWrapper<>(o, idleTimeout));
           log_debug("Checkin  - " + used.size() + "/" + (used.size()+free.size()));
           notifyAll();  // Notify waiting threads of available item.
         }
@@ -503,35 +505,48 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * If any items are still checked-out, this method waits until all items have
    * been checked-in before returning.
    */
-  public final void release() { release(false); }
+  public final void release()
+  {
+    release(false);
+  }
 
   /**
    * Returns whether the pool has been released (and can no longer be used).
+   * @return true if pool has been released, false otherwise
    */
-  public final boolean isReleased() { return released; }
+  public final boolean isReleased()
+  {
+    return released;
+  }
 
   /**
    * Releases all items from the pool, and shuts the pool down.
    * This method returns immediately; a background thread is created to perform the release.
    */
-  public final synchronized void releaseAsync() { releaseAsync(false); }
+  public final synchronized void releaseAsync()
+  {
+    releaseAsync(false);
+  }
 
   /**
    * Forcibly releases all items from the pool, and shuts the pool down.
    * If any items are still checked-out, this method forcibly destroys them
    * and then returns.
    */
-  public final void releaseForcibly() { release(true); }
+  public final void releaseForcibly()
+  {
+    release(true);
+  }
 
   /**
    * Releases all items from the pool, and shuts the pool down.
    * @param forced whether to forcibly destroy items, or let them be checked-in
    */
-  private final void release(boolean forced)
+  private void release(boolean forced)
   {
-    // Set released flag to prevent check-out of new items.
     if (released)
       return;
+    // Set released flag to prevent check-out of new items.
     released = true;
     // Allow sub-class to clean up.
     preRelease();
@@ -589,17 +604,23 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       }
       else
       {
-        if (logger.isDebugEnabled() && used.size() > 0)
+        if (log.isDebugEnabled() && used.size() > 0)
           log_debug("Waiting for used items to be checked-in...");
         while (used.size() > 0)
         {
-          try { wait(); }
-          catch (InterruptedException ix) { log_warn(ix.getMessage(), ix); }
+          try
+          {
+            wait();
+          }
+          catch (InterruptedException ix)
+          {
+            log_warn(ix.getMessage(), ix);
+          }
         }
       }
 
       // Destroy log reference.
-      if (logger.isDebugEnabled())
+      if (log.isDebugEnabled())
       {
         String s = "Released " + releasedCount + (releasedCount > 1 ? " items" : " item");
         if (failedCount > 0)
@@ -619,16 +640,25 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
 
       // Destroy event dispatch thread.
       listeners.clear();
-      eventDispatcher.halt();
+      if (eventDispatcher != null)
+        eventDispatcher.halt();
       if (!forced)
       {
-        try { eventDispatcher.join(); }
-        catch (InterruptedException ix) { log_warn("Interrupted during halting of event dispatch thread", ix); }
+        try
+        {
+          if (eventDispatcher != null)
+            eventDispatcher.join();
+        }
+        catch (InterruptedException ix)
+        {
+          log_warn("Interrupted during halting of event dispatch thread", ix);
+        }
       }
       eventDispatcher = null;
     }
     // Allow sub-class to clean up.
     postRelease();
+    shutdownHook = null;
   }
 
   /**
@@ -636,7 +666,9 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * the pool is officially released. This method is called as the first thing
    * before the remaining {@code ObjectPool} release implementation.
    */
-  protected void preRelease() {}
+  protected void preRelease()
+  {
+  }
 
   /**
    * Method to give a sub-class the opportunity to cleanup resources after
@@ -645,17 +677,23 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * Be aware that the event-dispatch thread, cleaner thread, any init threads,
    * and the custom log have all been terminated before this method is called.
    */
-  protected void postRelease() {}
+  protected void postRelease()
+  {
+  }
 
   /**
    * Releases all items from the pool, and shuts the pool down.
    * This method returns immediately; a background thread is created to perform the release.
    */
-  private final void releaseAsync(final boolean forced)
+  private void releaseAsync(final boolean forced)
   {
     Thread t = new Thread(new Runnable()
     {
-      public void run() { release(forced); }
+      @Override
+      public void run()
+      {
+        release(forced);
+      }
     });
     t.start();
   }
@@ -664,6 +702,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * Object creation method.
    * This method is called when a new item needs to be created following a call
    * to one of the check-out methods.
+   * @return A new instance of the pooled type
    * @throws Exception if unable to create the item
    */
   protected abstract T create() throws Exception;
@@ -673,6 +712,8 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * This method is called when checking-out an item to see if it is valid for use.
    * When overridden by the sub-class it is recommended that this method perform
    * suitable checks to ensure the object can be used without problems.
+   * @param o object to check for validity
+   * @return true if o is valid, false otherwise
    */
   protected abstract boolean isValid(final T o);
 
@@ -680,13 +721,14 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * Object destruction method.
    * This method is called when an object needs to be destroyed due to pool
    * pruning/cleaning, or final release of the pool.
+   * @param o object to destroy
    */
   protected abstract void destroy(final T o);
 
   /**
    * Destroys the given object (asynchronously if necessary).
    */
-  private final void destroyObject(final T o)
+  private void destroyObject(final T o)
   {
     if (o == null)
       return;
@@ -694,7 +736,11 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
     {
       Thread t = new Thread(new Runnable()
       {
-        public void run() { destroy(o); }
+        @Override
+        public void run()
+        {
+          destroy(o);
+        }
       });
       t.start();
     }
@@ -709,14 +755,22 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * is done in a separate thread, allowing the method to return immediately.
    * This can be useful when calling the destroy method on an object takes a
    * long time to complete.
+   * @param b whether to enable asynchronous object destruction
    */
-  public final void setAsyncDestroy(boolean b) { asyncDestroy = b; }
+  public final void setAsyncDestroy(boolean b)
+  {
+    asyncDestroy = b;
+  }
 
   /**
    * Returns whether asynchronous object destruction is enabled.
    * (Default: false)
+   * @return true if asynchronous object destruction is enabled, false otherwise
    */
-  public final boolean isAsyncDestroy() { return asyncDestroy; }
+  public final boolean isAsyncDestroy()
+  {
+    return asyncDestroy;
+  }
 
   /**
    * Sets the custom log stream.
@@ -734,6 +788,8 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   /**
    * Returns the custom {@code LogUtil} instance being used,
    * or null if it doesn't exist.
+   * @return the custom {@code LogUtil} instance being used,
+   * or null if it doesn't exist
    */
   public LogUtil getCustomLogger()
   {
@@ -744,7 +800,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   protected void log_error(String s)
   {
     String msg = name + ": " + s;
-    logger.error(msg);
+    log.error(msg);
     if (logUtil != null)
       logUtil.log(msg);
   }
@@ -753,7 +809,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   protected void log_error(String s, Throwable throwable)
   {
     String msg = name + ": " + s;
-    logger.error(msg, throwable);
+    log.error(msg, throwable);
     if (logUtil != null)
       logUtil.log(msg, throwable);
   }
@@ -762,7 +818,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   protected void log_warn(String s)
   {
     String msg = name + ": " + s;
-    logger.warn(msg);
+    log.warn(msg);
     if (logUtil != null)
       logUtil.log(msg);
   }
@@ -771,7 +827,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   protected void log_warn(String s, Throwable throwable)
   {
     String msg = name + ": " + s;
-    logger.warn(msg, throwable);
+    log.warn(msg, throwable);
     if (logUtil != null)
       logUtil.log(msg, throwable);
   }
@@ -780,7 +836,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   protected void log_info(String s)
   {
     String msg = name + ": " + s;
-    logger.info(msg);
+    log.info(msg);
     if (logUtil != null)
       logUtil.log(msg);
   }
@@ -789,7 +845,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   protected void log_info(String s, Throwable throwable)
   {
     String msg = name + ": " + s;
-    logger.info(msg, throwable);
+    log.info(msg, throwable);
     if (logUtil != null)
       logUtil.log(msg, throwable);
   }
@@ -798,7 +854,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   protected void log_debug(String s)
   {
     String msg = name + ": " + s;
-    logger.debug(msg);
+    log.debug(msg);
     if (logUtil != null)
       logUtil.debug(msg);
   }
@@ -807,7 +863,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   protected void log_debug(String s, Throwable throwable)
   {
     String msg = name + ": " + s;
-    logger.debug(msg, throwable);
+    log.debug(msg, throwable);
     if (logUtil != null)
       logUtil.debug(msg, throwable);
   }
@@ -815,39 +871,59 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   /** Logging relay method (to prefix pool name). */
   protected void log_trace(String s)
   {
-    logger.trace(name + ": " + s);
+    log.trace(name + ": " + s);
   }
 
   /** Logging relay method (to prefix pool name). */
   protected void log_trace(String s, Throwable throwable)
   {
-    logger.trace(name + ": " + s, throwable);
+    log.trace(name + ": " + s, throwable);
   }
 
   /**
    * Returns the pool name.
+   * @return The pool name
    */
-  public final String getName() { return this.name; }
+  public final String getName()
+  {
+    return this.name;
+  }
 
   /**
    * Returns the minimum number of items that should be kept pooled.
+   * @return The minimum number of items that should be kept pooled
    */
-  public synchronized final int getMinPool() { return minPool; }
+  public synchronized final int getMinPool()
+  {
+    return minPool;
+  }
 
   /**
    * Returns the maximum number of items that can be pooled.
+   * @return The maximum number of items that can be pooled
    */
-  public synchronized final int getMaxPool() { return maxPool; }
+  public synchronized final int getMaxPool()
+  {
+    return maxPool;
+  }
 
   /**
    * Returns the maximum number of items that can be created.
+   * @return The maximum number of items that can be created
    */
-  public synchronized final int getMaxSize() { return maxSize; }
+  public synchronized final int getMaxSize()
+  {
+    return maxSize;
+  }
 
   /**
    * Returns the idle timeout for unused items in the pool (in milliseconds).
+   * @return The idle timeout for unused items in the pool (in milliseconds)
    */
-  protected synchronized long getIdleTimeoutUnadjusted() { return idleTimeout; }
+  protected synchronized long getIdleTimeoutUnadjusted()
+  {
+    return idleTimeout;
+  }
 
   /**
    * Returns the idle timeout for unused items in the pool.
@@ -863,33 +939,40 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   }
 
   /**
-   * Alias for {@link #getIdleTimeout()}.
-   * @deprecated Replaced by {@link #getIdleTimeout()}.
-   */
-  @Deprecated
-  public long getExpiryTime() { return getIdleTimeout(); }
-
-  /**
    * Returns the multiplier for adjusting the idle timeout unit.
    * This is a convenience method for sub-classes to override if they want
    * to adjust the time measurement for the idleTimeout parameter.
    * By default it returns 1.0 which denotes milliseconds.
    * A sub-class wanting to operate with seconds would override it to
    * return 1000, or to operate in minutes, 60000.
+   * @return The multiplier for adjusting the idle timeout unit
    */
-  protected float getIdleTimeoutMultiplier() { return 1f; }
+  protected float getIdleTimeoutMultiplier()
+  {
+    return 1f;
+  }
 
   /**
    * Specifies the minimum time interval between cleaning attempts of
-   * the {@code Cleaner} thread.
+   * the {@code Cleaner} thread (milliseconds).
+   * @return The minimum time interval between cleaning attempts of
+   * the {@code Cleaner} thread (milliseconds)
    */
-  protected long getMinimumCleaningInterval() { return 200L; }
+  protected long getMinimumCleaningInterval()
+  {
+    return 200L;
+  }
 
   /**
    * Specifies the maximum time interval between cleaning attempts of
-   * the {@code Cleaner} thread.
+   * the {@code Cleaner} thread (milliseconds).
+   * @return the maximum time interval between cleaning attempts of
+   * the {@code Cleaner} thread (milliseconds)
    */
-  protected long getMaximumCleaningInterval() { return 5000L; }
+  protected long getMaximumCleaningInterval()
+  {
+    return 5000L;
+  }
 
   /**
    * Sets the pooling parameters (excluding {@code minPool}).
@@ -946,12 +1029,12 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       long min = getMinimumCleaningInterval();
       long max = getMaximumCleaningInterval();
       if (min < 0 || max < 0 || min >= max)
-        throw new RuntimeException("Invalid min/max cleaner interval specified");
+        throw new IllegalStateException("Invalid min/max cleaner interval specified");
       long iVal = Math.max(min, Math.min(max, this.idleTimeout / 5));
       (cleaner = new Cleaner(this, iVal)).start();
     }
 
-    if (logger.isDebugEnabled())
+    if (log.isDebugEnabled())
     {
       StringBuilder sb = new StringBuilder();
       sb.append("minpool=");
@@ -977,74 +1060,92 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
 
   /**
    * Returns the total number of objects held (available and checked-out).
+   * @return The total number of objects held (available and checked-out)
    */
-  public final synchronized int getSize() { return free.size() + used.size(); }
+  public final synchronized int getSize()
+  {
+    return free.size() + used.size();
+  }
 
   /**
    * Returns the number of items that are currently checked-out.
+   * @return The number of items that are currently checked-out
    */
-  public final synchronized int getCheckedOut() { return used.size(); }
+  public final synchronized int getCheckedOut()
+  {
+    return used.size();
+  }
 
   /**
    * Returns the number of items held in the pool that are free to be checked-out.
+   * @return The number of items held in the pool that are free to be checked-out
    */
-  public final synchronized int getFreeCount() { return free.size(); }
+  public final synchronized int getFreeCount()
+  {
+    return free.size();
+  }
 
   /**
    * Returns the number of check-out requests that have been made to the pool
    * since either its creation or the last time the {@link #resetHitCounter()}
    * method was called.
+   * @return The number of check-out requests that have been made to the pool
+   * since either its creation or the last time the {@link #resetHitCounter()}
+   * method was called
    */
-  public final synchronized long getRequestCount() { return requests; }
-
-  /**
-   * Returns hit rate of the pool as a percentage (between 0 and 100).
-   * The hit rate is the proportion of requests for an item which result
-   * in the return of an item which is in the pool, rather than which
-   * results in the creation of a new item.
-   * @deprecated Replaced by {@link #getPoolHitRate()} which returns a unit-scaled measure instead of a percentage.
-   */
-  @Deprecated
-  public final synchronized float getHitRate() { return getPoolHitRate() * 100f; }
+  public final synchronized long getRequestCount()
+  {
+    return requests;
+  }
 
   /**
    * Returns hit rate of the pool (between 0 and 1).
    * The hit rate is the proportion of requests for an item which result
    * in the return of an item which is in the pool, rather than which
    * results in the creation of a new item.
+   * @return Hit rate of the pool (between 0 and 1)
    */
-  public final synchronized float getPoolHitRate() { return (requests == 0) ? 0f : ((float)hits / requests); }
+  public final synchronized float getPoolHitRate()
+  {
+    return (requests == 0) ? 0f : ((float)hits / requests);
+  }
 
   /**
    * Returns miss rate of the pool (between 0 and 1).
    * The miss rate is the proportion of requests for an item for which no
    * pooled item can be retrieved.
+   * @return Miss rate of the pool (between 0 and 1)
    */
-  public final synchronized float getPoolMissRate() { return (requests == 0) ? 0f : ((float)(requests - hits) / requests); }
+  public final synchronized float getPoolMissRate()
+  {
+    return (requests == 0) ? 0f : ((float)(requests - hits) / requests);
+  }
 
   /**
    * Resets the counters for determining the pool's hit/miss rates.
    */
-  public final synchronized void resetHitCounter() { requests = hits = 0; }
-
-  /**
-   * Sets the pool access method to FIFO (first-in, first-out: a queue).
-   */
-  protected final synchronized void setAccessFIFO() { accessMethod = ACCESS_FIFO; }
-
-  /**
-   * Sets the pool access method to LIFO (last-in, first-out: a stack).
-   */
-  protected final synchronized void setAccessLIFO() { accessMethod = ACCESS_LIFO; }
-
-  /**
-   * Sets the pool access method to random (a random item is selected for check-out).
-   */
-  protected final synchronized void setAccessRandom()
+  public final synchronized void resetHitCounter()
   {
-    if (randGen == null)
+    requests = hits = 0;
+  }
+
+  /**
+   * Sets the pool selection strategy.
+   * @param selection selection strategy
+   */
+  public final synchronized void setSelectionStrategy(Strategy selection)
+  {
+    if (selection == null)
+    {
+      log.info("Cannot set null pool selection strategy; using default: LIFO");
+      this.selection = Strategy.SELECT_LIFO;
+    }
+    else
+    {
+      this.selection = selection;
+    }
+    if (this.selection == Strategy.SELECT_RANDOM && this.randGen == null)
       randGen = new Random();
-    accessMethod = ACCESS_RANDOM;
   }
 
   /**
@@ -1054,8 +1155,12 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * Only instances of {@link List} collections should be used.
    * (Default: {@code java.util.ArrayList} class)
    * For reference, pool items are checked-in to the tail end of the list.
+   * @return The class to use for the pool collection
    */
-  protected Class<? extends List> getPoolClass() { return ArrayList.class; }
+  protected Class<? extends List> getPoolClass()
+  {
+    return ArrayList.class;
+  }
 
   /**
    * Flushes the pool of all currently available items, emptying the pool.
@@ -1091,7 +1196,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   final synchronized boolean purge()
   {
     log_trace("Checking for expired items");
-    if (free.size() == 0)
+    if (free.isEmpty())
       return false;
     int count = 0;
     TimeWrapper<T> tw = null;
@@ -1112,6 +1217,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * Indicates whether some other object is &quot;equal to&quot; this one.
    * This implementation performs checks on the following fields:
    * {name, minPool, maxPool, maxSize, idleTimeout}.
+   * @param o object to check for equality against this instance
    */
   @Override
   @SuppressWarnings("unchecked")
@@ -1154,11 +1260,13 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * Compares this object with the specified object for order.
    * This implementation is consistent with the implementation of
    * {@link #equals(Object)}, comparing the same fields.
+   * @param pool pool to compare against this instance
    */
-  public synchronized int compareTo(ObjectPool pool)
+  @Override
+  public synchronized int compareTo(ObjectPool<T> pool)
   {
     if (pool == null)
-      throw new NullPointerException();
+      throw new NullPointerException("Invalid pool specified: null");
     int i = this.getName().compareTo(pool.getName());
     if (i != 0)
       return i;
@@ -1181,16 +1289,18 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
 
   /**
    * Adds an listener to the event notification list.
+   * @param x listener to add
    */
-  public final void addObjectPoolListener(ObjectPoolListener x)
+  public final void addObjectPoolListener(ObjectPoolListener<T> x)
   {
     listeners.add(x);
   }
 
   /**
    * Removes a listener from the event notification list.
+   * @param x listener to remove
    */
-  public final void removeObjectPoolListener(ObjectPoolListener x)
+  public final void removeObjectPoolListener(ObjectPoolListener<T> x)
   {
     listeners.remove(x);
   }
@@ -1199,14 +1309,21 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * Fires an ObjectPoolEvent to all listeners.
    * 'type' should be one of ObjectPoolEvent types.
    */
-  private final void firePoolEvent(int type)
+  private void firePoolEvent(int type)
   {
     if (listeners.isEmpty())
       return;
-    ObjectPoolEvent poolEvent = null;
+    ObjectPoolEvent<T> poolEvent = null;
+    // Setup event dispatch thread if necessary.
+    if (eventDispatcher == null)
+    {
+      eventDispatcher = new EventDispatcher<>(listeners, new Notifier<T>());
+      eventDispatcher.start();
+    }
+    // Dispatch event.
     synchronized (this)
     {
-      poolEvent = new ObjectPoolEvent(this, type);
+      poolEvent = new ObjectPoolEvent<>(this, type);
       poolEvent.setMinPool(getMinPool());
       poolEvent.setMaxPool(getMaxPool());
       poolEvent.setMaxSize(getMaxSize());
@@ -1225,14 +1342,14 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * all listeners receive the event before the event-dispatch thread is
    * shutdown.
    */
-  private final void firePoolReleasedEvent()
+  private void firePoolReleasedEvent()
   {
     if (listeners.isEmpty())
       return;
-    ObjectPoolEvent poolEvent = null;
+    ObjectPoolEvent<T> poolEvent = null;
     synchronized (this)
     {
-      poolEvent = new ObjectPoolEvent(this, ObjectPoolEvent.POOL_RELEASED);
+      poolEvent = new ObjectPoolEvent<>(this, ObjectPoolEvent.POOL_RELEASED);
       poolEvent.setMinPool(getMinPool());
       poolEvent.setMaxPool(getMaxPool());
       poolEvent.setMaxSize(getMaxSize());
@@ -1243,7 +1360,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       poolEvent.setPoolHitRate(getPoolHitRate());
     }
     // No copy of listeners needs to be taken as the collection is thread-safe.
-    for (ObjectPoolListener listener : listeners)
+    for (ObjectPoolListener<T> listener : listeners)
     {
       try
       {
@@ -1265,13 +1382,13 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   private final class Cleaner extends Thread
   {
     /** Reference to the pool instance to be cleaned. */
-    private final ObjectPool pool;
+    private final ObjectPool<T> pool;
     /** Cleaning period/interval (milliseconds). */
     private long interval;
     /** Flag determining whether the cleaner has been stopped. */
     private volatile boolean stopped;
 
-    private Cleaner(ObjectPool pool, long interval)
+    private Cleaner(ObjectPool<T> pool, long interval)
     {
       assert pool != null && interval > 0;
       this.setName("Cleaner-thread-" + Integer.toString(cleanerCount++));
@@ -1333,8 +1450,14 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
         }
         if (!stopped)
         {
-          try { sleep(interval); }
-          catch (InterruptedException ix) {}
+          try
+          {
+            sleep(interval);
+          }
+          catch (InterruptedException ix)
+          {
+            // No need to catch, as just loops around again.
+          }
         }
       }
     }
@@ -1354,7 +1477,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
     /** Reference to the pool instance to be cleaned. */
     private final ObjectPool<T> pool;
     /** Number of items to initialize. */
-    private int num;
+    private final int num;
     /** Flag determining whether the init thread has been stopped. */
     private volatile boolean stopped = false;
     /** Flag determining whether the init thread has been completed working. */
@@ -1408,11 +1531,14 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
             try
             {
               T o = create();
-              if (o == null)
-                throw new RuntimeException("Null item created");
+              if (!isValid(o))
+              {
+                firePoolEvent(ObjectPoolEvent.VALIDATION_ERROR);
+                throw new RuntimeException("Unable to create a valid item");
+              }
               else
               {
-                free.add(new TimeWrapper<T>(o, pool.idleTimeout));
+                free.add(new TimeWrapper<>(o, pool.idleTimeout));
                 pool.notifyAll();
                 count++;
                 log_debug("Initialized new item in pool");
@@ -1444,9 +1570,9 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    */
   private static final class Releaser extends Thread
   {
-    private ObjectPool instance;
+    private final ObjectPool<?> instance;
 
-    private Releaser(ObjectPool pool)
+    private Releaser(ObjectPool<?> pool)
     {
       instance = pool;
       setDaemon(true);
@@ -1463,9 +1589,10 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   /**
    * {@link EventNotifier} implementation to notify event listeners of events.
    */
-  private final class Notifier implements EventNotifier<ObjectPoolListener, ObjectPoolEvent>
+  private final class Notifier<T extends Reusable> implements EventNotifier<ObjectPoolListener<T>, ObjectPoolEvent<T>>
   {
-    public void notifyListener(ObjectPoolListener opl, ObjectPoolEvent evt)
+    @Override
+    public void notifyListener(ObjectPoolListener<T> opl, ObjectPoolEvent<T> evt)
     {
       try
       {

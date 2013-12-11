@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -49,8 +49,8 @@ import javax.naming.NamingException;
 import javax.naming.RefAddr;
 import javax.naming.Reference;
 import javax.naming.spi.ObjectFactory;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Factory for creating instances of the {@link DBPoolDataSource} class.
@@ -59,8 +59,8 @@ import org.apache.commons.logging.LogFactory;
  */
 public class DBPoolDataSourceFactory implements ObjectFactory
 {
-  /** Apache Commons Logging shared instance for writing log entries. */
-  protected static final Log logger = LogFactory.getLog(DBPoolDataSourceFactory.class);
+  /** SLF4J shared instance for writing log entries. */
+  protected static final Logger logger = LoggerFactory.getLogger(DBPoolDataSourceFactory.class);
 
   /**
    * Creates a {@link DBPoolDataSource} instance using the location or reference information specified.
@@ -74,19 +74,23 @@ public class DBPoolDataSourceFactory implements ObjectFactory
    * @throws Exception if this object factory encountered an exception while attempting to create the {@code DBPoolDataSource}, and no other object factories are to be tried.
    */
   @SuppressWarnings("unchecked")
+  @Override
   public Object getObjectInstance(final Object obj, final Name name, final Context nameCtx, final Hashtable<?,?> environment) throws Exception
   {
     if (logger.isDebugEnabled())
     {
       logger.debug("Object : " + obj);
-      logger.debug("Name   : " + name + " (" + name.getClass().getName() + ")");
+      logger.debug("Name   : " + name + (name == null ? "" : (" (" + name.getClass().getName() + ")")));
       logger.debug("Context: " + nameCtx);
-      List list = new ArrayList(environment.keySet());
-      Collections.sort(list);
-      for (Iterator it = list.iterator(); it.hasNext();)
+      if (environment != null)
       {
-        Object o = it.next();
-        logger.debug("Environment[" + o + "]: " + environment.get(o));
+        List list = new ArrayList(environment.keySet());
+        Collections.sort(list);
+        for (Iterator it = list.iterator(); it.hasNext();)
+        {
+          Object o = it.next();
+          logger.debug("Environment[" + o + "]: " + environment.get(o));
+        }
       }
     }
 
@@ -110,58 +114,111 @@ public class DBPoolDataSourceFactory implements ObjectFactory
       // Standard DataSource properties.
       // -------------------------------
       if (refName.equalsIgnoreCase("description"))
+      {
         ds.setDriverClassName(refValue);
+        logger.trace("Set DataSource description: " + refValue);
+      }
       else if (refName.equalsIgnoreCase("user") || refName.equalsIgnoreCase("username"))
+      {
         ds.setUser(refValue);
+        logger.trace("Set DataSource username: " + refValue);
+      }
       else if (refName.equalsIgnoreCase("password"))
+      {
         ds.setPassword(refValue);
+        logger.trace("Set DataSource password");
+      }
       // ------------------------------------
       // DBPool custom DataSource properties.
       // ------------------------------------
       else if (refName.equalsIgnoreCase("driverClassName"))
+      {
         ds.setDriverClassName(refValue);
-      else if (refName.equalsIgnoreCase("url"))  // If specified, overrides: networkProtocol/serverName/portNumber/databaseName
+        logger.trace("Set DataSource driver class name: " + refValue);
+      }
+      else if (refName.equalsIgnoreCase("url"))
+      {
         ds.setUrl(refValue);
+        logger.trace("Set DataSource URL: " + refValue);
+      }
       else if (refName.equalsIgnoreCase("passwordDecoderClassName"))
+      {
         ds.setPasswordDecoderClassName(refValue);
+        logger.trace("Set DataSource PasswordDecoder class name: " + refValue);
+      }
       else if (refName.equalsIgnoreCase("validatorClassName"))
+      {
         ds.setValidatorClassName(refValue);
+        logger.trace("Set DataSource ConnectionValidator class name: " + refValue);
+      }
       else if (refName.equalsIgnoreCase("validationQuery"))
+      {
         ds.setValidationQuery(refValue);
+        logger.trace("Set DataSource validation query: " + refValue);
+      }
       else if (refName.equalsIgnoreCase("minPool"))
       {
-        try { ds.setMinPool(Integer.parseInt(refValue)); }
-        catch (NumberFormatException nfx) { throw new NamingException("Invalid '" + refName + "' value: " + refValue); }
+        try
+        {
+          ds.setMinPool(Integer.parseInt(refValue));
+        }
+        catch (NumberFormatException nfx)
+        {
+          throw new NamingException("Invalid '" + refName + "' value: " + refValue);
+        }
+        logger.trace("Set DataSource minPool: " + refValue);
       }
-      else if (refName.equalsIgnoreCase("maxPool") || refName.equalsIgnoreCase("poolSize"))
+      else if (refName.equalsIgnoreCase("maxPool"))
       {
-        if (refName.equalsIgnoreCase("poolSize"))
-          logger.warn("Attribute 'poolSize' is deprecated; use 'maxPool' instead");
-        try { ds.setMaxPool(Integer.parseInt(refValue)); }
-        catch (NumberFormatException nfx) { throw new NamingException("Invalid '" + refName + "' value: " + refValue); }
+        try
+        {
+          ds.setMaxPool(Integer.parseInt(refValue));
+        }
+        catch (NumberFormatException nfx)
+        {
+          throw new NamingException("Invalid '" + refName + "' value: " + refValue);
+        }
+        logger.trace("Set DataSource maxPool: " + refValue);
       }
-      else if (refName.equalsIgnoreCase("maxSize") || refName.equalsIgnoreCase("maxConn"))
+      else if (refName.equalsIgnoreCase("maxSize"))
       {
-        if (refName.equalsIgnoreCase("maxConn"))
-          logger.warn("Attribute 'maxConn' is deprecated; use 'maxSize' instead");
-        try { ds.setMaxSize(Integer.parseInt(refValue)); }
-        catch (NumberFormatException nfx) { throw new NamingException("Invalid '" + refName + "' value: " + refValue); }
+        try
+        {
+          ds.setMaxSize(Integer.parseInt(refValue));
+        }
+        catch (NumberFormatException nfx)
+        {
+          throw new NamingException("Invalid '" + refName + "' value: " + refValue);
+        }
+        logger.trace("Set DataSource minSize: " + refValue);
       }
-      else if (refName.equalsIgnoreCase("idleTimeout") || refName.equalsIgnoreCase("expiryTime"))
+      else if (refName.equalsIgnoreCase("idleTimeout"))
       {
-        if (refName.equalsIgnoreCase("expiryTime"))
-          logger.warn("Attribute 'expiryTime' is deprecated; use 'idleTimeout' instead");
-        try { ds.setIdleTimeout(Integer.parseInt(refValue)); }
-        catch (NumberFormatException nfx) { throw new NamingException("Invalid '" + refName + "' value: " + refValue); }
+        try
+        {
+          ds.setIdleTimeout(Integer.parseInt(refValue));
+        }
+        catch (NumberFormatException nfx)
+        {
+          throw new NamingException("Invalid '" + refName + "' value: " + refValue);
+        }
+        logger.trace("Set DataSource idleTimeout: " + refValue);
       }
       else if (refName.equalsIgnoreCase("loginTimeout"))
       {
-        try { ds.setLoginTimeout(Integer.parseInt(refValue)); }
-        catch (NumberFormatException nfx) { throw new NamingException("Invalid '" + refName + "' value: " + refValue); }
+        try
+        {
+          ds.setLoginTimeout(Integer.parseInt(refValue));
+        }
+        catch (NumberFormatException nfx)
+        {
+          throw new NamingException("Invalid '" + refName + "' value: " + refValue);
+        }
+        logger.trace("Set DataSource idleTimeout: " + refValue);
       }
       else
       {
-        logger.info("Unknown reference '" + refName + "' with value: " + refValue);
+        logger.debug("Unknown reference '" + refName + "' with value: " + refValue);
       }
     }
 

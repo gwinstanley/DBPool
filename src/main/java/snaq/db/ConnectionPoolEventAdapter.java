@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -47,17 +47,60 @@ import snaq.util.ObjectPoolEventAdapter;
  *
  * @author Giles Winstanley
  */
-public class ConnectionPoolEventAdapter extends ObjectPoolEventAdapter implements ConnectionPoolListener
+public class ConnectionPoolEventAdapter extends ObjectPoolEventAdapter<CacheConnection> implements ConnectionPoolListener
 {
-  public void poolInitCompleted(ConnectionPoolEvent evt) {}
-  public void poolCheckOut(ConnectionPoolEvent evt) {}
-  public void poolCheckIn(ConnectionPoolEvent evt) {}
-  public void validationError(ConnectionPoolEvent evt) {}
-  public void maxPoolLimitReached(ConnectionPoolEvent evt) {}
-  public void maxPoolLimitExceeded(ConnectionPoolEvent evt) {}
-  public void maxSizeLimitReached(ConnectionPoolEvent evt) {}
-  public void maxSizeLimitError(ConnectionPoolEvent evt) {}
-  public void poolParametersChanged(ConnectionPoolEvent evt) {}
-  public void poolFlushed(ConnectionPoolEvent evt) {}
-  public void poolReleased(ConnectionPoolEvent evt) {}
+  @Override
+  public void poolInitCompleted(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void poolCheckOut(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void poolCheckIn(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void validationError(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void maxPoolLimitReached(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void maxPoolLimitExceeded(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void maxSizeLimitReached(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void maxSizeLimitError(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void poolParametersChanged(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void poolFlushed(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void poolReleased(ConnectionPoolEvent evt)
+  {
+  }
 }

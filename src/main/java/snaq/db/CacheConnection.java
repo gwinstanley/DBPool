@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -37,21 +37,38 @@
  */
 package snaq.db;
 
-import java.sql.*;
+import java.sql.Array;
+import java.sql.Blob;
+import java.sql.CallableStatement;
+import java.sql.Clob;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.NClob;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLClientInfoException;
+import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.sql.SQLWarning;
+import java.sql.SQLXML;
+import java.sql.Savepoint;
+import java.sql.Statement;
+import java.sql.Struct;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import java.util.concurrent.Executor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import snaq.util.Reusable;
 import snaq.util.logging.LogUtil;
 
 /**
  * {@link Connection} wrapper that implements statement caching.
- * 
+ *
  * @see snaq.db.CachedStatement
  * @see snaq.db.CachedPreparedStatement
  * @see snaq.db.CachedCallableStatement
@@ -60,10 +77,10 @@ import snaq.util.logging.LogUtil;
  */
 public final class CacheConnection implements Connection, StatementListener, Reusable
 {
-  /** Apache Commons Logging instance for writing log entries. */
-  protected Log logger;
+  /** SLF4J logger instance for writing log entries. */
+  protected Logger logger;
   /** Reference to pool's custom logging utility. */
-  private LogUtil logUtil;
+  private final LogUtil logUtil;
   /** Exception message for trying to used a closed connection. */
   private static final String MSG_CONNECTION_CLOSED = "Connection is closed";
   /** Default {@link ResultSet} type. */
@@ -77,19 +94,19 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   /** Reference to the raw delegate connection. */
   private final Connection con;
   /** Statement cache ({@code List} of {@code Statement}). */
-  private final List<CachedStatement> ss = new ArrayList<CachedStatement>();
+  private final List<CachedStatement> ss = new ArrayList<>();
   /** Holder for Statement instances in use. */
-  private final List<CachedStatement> ssUsed = new ArrayList<CachedStatement>();
+  private final List<CachedStatement> ssUsed = new ArrayList<>();
   /** PreparedStatement cache ({@code Map} of {@code PreparedStatement}). */
-  private final Map<String,List<CachedPreparedStatement>> ps = new HashMap<String,List<CachedPreparedStatement>>();
+  private final Map<String,List<CachedPreparedStatement>> ps = new HashMap<>();
   /** Holder for {@code PreparedStatement} instances in use. */
-  private final List<CachedPreparedStatement> psUsed = new ArrayList<CachedPreparedStatement>();
+  private final List<CachedPreparedStatement> psUsed = new ArrayList<>();
   /** CallableStatement cache ({@code Map} of {@code CallableStatement}). */
-  private final Map<String,List<CachedCallableStatement>> cs = new HashMap<String,List<CachedCallableStatement>>();
+  private final Map<String,List<CachedCallableStatement>> cs = new HashMap<>();
   /** Holder for {@code CallableStatement} instances in use. */
-  private final List<CachedCallableStatement> csUsed = new ArrayList<CachedCallableStatement>();
-  /** Holder for non-cachable Statement instances that are in use. */
-  private final List<CachedStatement> nonCachable = new ArrayList<CachedStatement>();
+  private final List<CachedCallableStatement> csUsed = new ArrayList<>();
+  /** Holder for non-cacheable Statement instances that are in use. */
+  private final List<CachedStatement> nonCacheable = new ArrayList<>();
   /** Flag indicating whether {@link Statement} instances are to be cached. */
   private boolean cacheS;
   /** Flag indicating whether {@link Statement} instances are to be cached. */
@@ -127,7 +144,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
     setCacheAll(true);
     ssReq = ssHit = psReq = psHit = csReq = csHit = 0;
     // Send log output to same logger as the pool uses.
-    logger = LogFactory.getLog(pool.getClass().getName() + "." + pool.getName());
+    logger = LoggerFactory.getLogger(pool.getClass().getName() + "." + pool.getName());
     logUtil = pool.getCustomLogger();
   }
 
@@ -156,8 +173,14 @@ public final class CacheConnection implements Connection, StatementListener, Reu
     // Release statements if required.
     if (cacheS && !cache)
     {
-      try { flushSpareStatements(); }
-      catch (SQLException sqlx) { log_warn(pool.getName() + ": " + sqlx.getMessage(), sqlx); }
+      try
+      {
+        flushSpareStatements();
+      }
+      catch (SQLException sqlx)
+      {
+        log_warn(pool.getName() + ": " + sqlx.getMessage(), sqlx);
+      }
     }
     this.cacheS = cache;
   }
@@ -171,8 +194,14 @@ public final class CacheConnection implements Connection, StatementListener, Reu
     // Release statements if required.
     if (cacheP && !cache)
     {
-      try { flushSparePreparedStatements(); }
-      catch (SQLException sqlx) { log_warn(pool.getName() + ": " + sqlx.getMessage(), sqlx); }
+      try
+      {
+        flushSparePreparedStatements();
+      }
+      catch (SQLException sqlx)
+      {
+        log_warn(pool.getName() + ": " + sqlx.getMessage(), sqlx);
+      }
     }
     this.cacheP = cache;
   }
@@ -186,8 +215,14 @@ public final class CacheConnection implements Connection, StatementListener, Reu
     // Release statements if required.
     if (cacheC && !cache)
     {
-      try { flushSpareCallableStatements(); }
-      catch (SQLException sqlx) { log_warn(pool.getName() + ": " + sqlx.getMessage(), sqlx); }
+      try
+      {
+        flushSpareCallableStatements();
+      }
+      catch (SQLException sqlx)
+      {
+        log_warn(pool.getName() + ": " + sqlx.getMessage(), sqlx);
+      }
     }
     this.cacheC = cache;
   }
@@ -207,25 +242,37 @@ public final class CacheConnection implements Connection, StatementListener, Reu
    * Returns whether caching of all {@link Statement} instances is enabled.
    * @return true if all types of statements are flagged for caching, false otherwise.
    */
-  public boolean isCachingAllStatements() { return cacheS && cacheP && cacheC; }
+  public boolean isCachingAllStatements()
+  {
+    return cacheS && cacheP && cacheC;
+  }
 
   /**
    * Returns whether caching of standard {@link Statement} instances is enabled.
    * @return true if {@code Statement} instances are flagged for caching, false otherwise.
    */
-  public boolean isCachingStatements() { return cacheS; }
+  public boolean isCachingStatements()
+  {
+    return cacheS;
+  }
 
   /**
    * Returns whether caching of {@link PreparedStatement} instances is enabled.
    * @return true if {@code PreparedStatement} instances are flagged for caching, false otherwise.
    */
-  public boolean isCachingPreparedStatements() { return cacheP; }
+  public boolean isCachingPreparedStatements()
+  {
+    return cacheP;
+  }
 
   /**
    * Returns whether caching of {@link CallableStatement} instances is enabled.
    * @return true if {@code CallableStatement} instances are flagged for caching, false otherwise.
    */
-  public boolean isCachingCallableStatements() { return cacheC; }
+  public boolean isCachingCallableStatements()
+  {
+    return cacheC;
+  }
 
   /**
    * Returns the delegate {@link Connection} instance for which this provides
@@ -256,6 +303,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   /**
    * Returns the {@code ConnectionPool} to which this {@code CacheConnection} belongs.
    * This is provided as a convenience for internal library code (testing etc.)
+   * @return The {@code ConnectionPool} to which this {@code CacheConnection} belongs
    */
   protected final ConnectionPool getPool()
   {
@@ -299,18 +347,21 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   //******************************
 
   /** Overrides method to provide caching support. */
+  @Override
   public Statement createStatement() throws SQLException
   {
     return createStatement(DEFAULT_RESULTSET_TYPE, DEFAULT_RESULTSET_CONCURRENCY, DEFAULT_RESULTSET_HOLDABILITY);
   }
 
   /** Overrides method to provide caching support. */
+  @Override
   public Statement createStatement(int resultSetType, int resultSetConcurrency) throws SQLException
   {
     return createStatement(resultSetType, resultSetConcurrency, DEFAULT_RESULTSET_HOLDABILITY);
   }
 
   /** Overrides method to provide caching support. */
+  @Override
   public Statement createStatement(int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException
   {
     if (!open)
@@ -330,9 +381,9 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       {
         ssReq++;
         // Find Statement matching criteria required.
-        for (Iterator it = ss.iterator(); it.hasNext();)
+        for (Iterator<CachedStatement> it = ss.iterator(); it.hasNext();)
         {
-          CachedStatement x = (CachedStatement)it.next();
+          CachedStatement x = it.next();
           x.setChecking(true);
           if (x.getResultSetType() == resultSetType &&
                   x.getResultSetConcurrency() == resultSetConcurrency &&
@@ -366,12 +417,14 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   }
 
   /** Overrides method to provide caching support. */
+  @Override
   public PreparedStatement prepareStatement(String sql) throws SQLException
   {
     return prepareStatement(sql, DEFAULT_RESULTSET_TYPE, DEFAULT_RESULTSET_CONCURRENCY, DEFAULT_RESULTSET_HOLDABILITY);
   }
 
   /** Overrides method to provide caching support. */
+  @Override
   public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency) throws SQLException
   {
     return prepareStatement(sql, resultSetType, resultSetConcurrency, DEFAULT_RESULTSET_HOLDABILITY);
@@ -380,6 +433,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   /**
    * Overrides method to provide caching support.
    */
+  @Override
   public PreparedStatement prepareStatement(String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException
   {
     if (!open)
@@ -399,13 +453,13 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       {
         psReq++;
         // Get List of cached PreparedStatements with matching SQL.
-        List list = (List)ps.get(sql);
+        List<CachedPreparedStatement> list = ps.get(sql);
         if (list != null && !list.isEmpty())
         {
           // Find first free PreparedStatement with matching parameters.
-          for (Iterator it = list.iterator(); it.hasNext();)
+          for (Iterator<CachedPreparedStatement> it = list.iterator(); it.hasNext();)
           {
-            CachedPreparedStatement x = (CachedPreparedStatement)it.next();
+            CachedPreparedStatement x = it.next();
             x.setChecking(true);
             if (x.getResultSetType() == resultSetType &&
                     x.getResultSetConcurrency() == resultSetConcurrency &&
@@ -438,17 +492,22 @@ public final class CacheConnection implements Connection, StatementListener, Reu
         }
       }
     }
-    synchronized(psUsed) { psUsed.add(cps); }
+    synchronized(psUsed)
+    {
+      psUsed.add(cps);
+    }
     return cps;
   }
 
   /** Overrides method to provide caching support. */
+  @Override
   public CallableStatement prepareCall(String sql) throws SQLException
   {
     return prepareCall(sql, DEFAULT_RESULTSET_TYPE, DEFAULT_RESULTSET_CONCURRENCY, DEFAULT_RESULTSET_HOLDABILITY);
   }
 
   /** Overrides method to provide caching support. */
+  @Override
   public CallableStatement prepareCall(String sql, int resultSetType, int resultSetConcurrency) throws SQLException
   {
     return prepareCall(sql, resultSetType, resultSetConcurrency, DEFAULT_RESULTSET_HOLDABILITY);
@@ -457,6 +516,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   /**
    * Overrides method to provide caching support.
    */
+  @Override
   public CallableStatement prepareCall(String sql, int resultSetType, int resultSetConcurrency, int resultSetHoldability) throws SQLException
   {
     if (!open)
@@ -476,13 +536,13 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       {
         csReq++;
         // Get List of cached CallableStatements with matching SQL.
-        List list = (List)cs.get(sql);
+        List<CachedCallableStatement> list = cs.get(sql);
         if (list != null && !list.isEmpty())
         {
           // Find first free CallableStatement with matching parameters.
-          for (Iterator it = list.iterator(); it.hasNext();)
+          for (Iterator<CachedCallableStatement> it = list.iterator(); it.hasNext();)
           {
-            CachedCallableStatement x = (CachedCallableStatement)it.next();
+            CachedCallableStatement x = it.next();
             x.setChecking(true);
             if (x.getResultSetType() == resultSetType &&
                     x.getResultSetConcurrency() == resultSetConcurrency &&
@@ -516,33 +576,42 @@ public final class CacheConnection implements Connection, StatementListener, Reu
         }
       }
     }
-    synchronized(csUsed) { csUsed.add(ccs); }
+    synchronized(csUsed)
+    {
+      csUsed.add(ccs);
+    }
     return ccs;
   }
 
   /**
    * Callback invoked when a {@link CachedStatement} is closed.
    * This method should only be called by {@link CachedStatement} instances.
+   * @param s CachedStatement on which close() method was called
+   * @throws SQLException
    */
+  @Override
   public void statementClosed(CachedStatement s) throws SQLException
   {
-    // Check to see if statement is definitely non-cachable.
-    synchronized(nonCachable)
+    // Check to see if statement is definitely non-cacheable.
+    synchronized(nonCacheable)
     {
-      if (nonCachable.remove(s))
+      if (nonCacheable.remove(s))
       {
         s.release();
         return;
       }
     }
-    // ...otherwise process as possibly cachable.
+    // ...otherwise process as possibly cacheable.
     if (s instanceof CachedCallableStatement)
     {
       synchronized(cs)
       {
         CachedCallableStatement ccs = (CachedCallableStatement)s;
         String key = ccs.getSQLString();
-        synchronized(csUsed) { csUsed.remove(ccs); }
+        synchronized(csUsed)
+        {
+          csUsed.remove(ccs);
+        }
         // If caching disabled close statement.
         if (!cacheC || !ccs.isCacheable())
           ccs.release();
@@ -555,7 +624,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
             List<CachedCallableStatement> list = cs.get(key);
             if (list == null)
             {
-              list = new ArrayList<CachedCallableStatement>();
+              list = new ArrayList<>();
               cs.put(key, list);
             }
             list.add(ccs);
@@ -573,7 +642,10 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       {
         CachedPreparedStatement cps = (CachedPreparedStatement)s;
         String key = cps.getSQLString();
-        synchronized(psUsed) { psUsed.remove(cps); }
+        synchronized(psUsed)
+        {
+          psUsed.remove(cps);
+        }
         // If caching disabled close statement.
         if (!cacheP || !cps.isCacheable())
           cps.release();
@@ -586,7 +658,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
             List<CachedPreparedStatement> list = ps.get(key);
             if (list == null)
             {
-              list = new ArrayList<CachedPreparedStatement>();
+              list = new ArrayList<>();
               ps.put(key, list);
             }
             list.add(cps);
@@ -602,7 +674,10 @@ public final class CacheConnection implements Connection, StatementListener, Reu
     {
       synchronized(ss)
       {
-        synchronized(ssUsed) { ssUsed.remove(s); }
+        synchronized(ssUsed)
+        {
+          ssUsed.remove(s);
+        }
         // If caching disabled close statement.
         if (!cacheS || !s.isCacheable())
           s.release();
@@ -628,40 +703,52 @@ public final class CacheConnection implements Connection, StatementListener, Reu
     return (reqs == 0) ? "" : (prefix + "HitRate=" + (((float)hits / reqs) * 100f) + "%");
   }
 
+  @Override
   public String nativeSQL(String sql) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.nativeSQL(sql);
   }
 
+  @Override
   public void setAutoCommit(boolean autoCommit) throws SQLException
   {
-    if (!open && !closing) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open && !closing)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     con.setAutoCommit(autoCommit);
   }
 
+  @Override
   public boolean getAutoCommit() throws SQLException
   {
-    if (!open && !closing) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open && !closing)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.getAutoCommit();
   }
 
+  @Override
   public void commit() throws SQLException
   {
-    if (!open && !closing) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open && !closing)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     con.commit();
   }
 
+  @Override
   public void rollback() throws SQLException
   {
-    if (!open && !closing) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open && !closing)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     con.rollback();
   }
 
   /**
    * Puts the connection back in a state where it can be reused.
    * This method should only be called by {@link ConnectionPool} instances.
+   * @throws SQLException
    */
+  @Override
   public void recycle() throws SQLException
   {
     // Close all open Statements.
@@ -724,8 +811,8 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       flushSpareCallableStatements();
     }
 
-    // Close all open non-cachable PreparedStatements.
-    flushOpenNonCachableStatements();
+    // Close all open non-cacheable PreparedStatements.
+    flushOpenNonCacheableStatements();
 
     // If auto-commit is disabled, roll-back changes, and restore auto-commit.
     if (!getAutoCommit())
@@ -763,7 +850,9 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Determines if this object is &quot;dirty&quot; (i.e. unable to be recycled).
+   * @return true if {@link ConnectionPool#isRecycleAfterDelegateUse()} is true and delegate has been used, false otherwise
    */
+  @Override
   public boolean isDirty()
   {
     return usedDelegate && !pool.isRecycleAfterDelegateUse();
@@ -772,6 +861,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   /**
    * Overrides method to provide caching support.
    */
+  @Override
   public void close() throws SQLException
   {
     if (!open)
@@ -785,6 +875,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Returns the current number of spare Statements that are cached.
+   * @return The current number of spare Statements that are cached
    */
   public int getSpareStatementCount()
   {
@@ -794,6 +885,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   /**
    * Returns the current number of {@link Statement} instances that are in use
    * (not including {@link PreparedStatement} or {@link CallableStatement} instances).
+   * @return current open Statement count
    */
   public int getOpenStatementCount()
   {
@@ -802,14 +894,15 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Returns the current number of spare {@link PreparedStatement} instances that are cached.
+   * @return current spare PreparedStatement count
    */
   public int getSparePreparedStatementCount()
   {
     int count = 0;
     synchronized(ps)
     {
-      for (Iterator it = ps.values().iterator(); it.hasNext();)
-        count += ((List)it.next()).size();
+      for (Iterator<List<CachedPreparedStatement>> it = ps.values().iterator(); it.hasNext();)
+        count += it.next().size();
     }
     return count;
   }
@@ -817,6 +910,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   /**
    * Returns the current number of {@link PreparedStatement} instances that
    * are in use (not including {@link CallableStatement} instances).
+   * @return current open PreparedStatement count
    */
   public int getOpenPreparedStatementCount()
   {
@@ -825,20 +919,22 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Returns the current number of spare {@link CallableStatement} instances that are cached.
+   * @return current spare CallableStatement count
    */
   public int getSpareCallableStatementCount()
   {
     int count = 0;
     synchronized(cs)
     {
-      for (Iterator it = cs.values().iterator(); it.hasNext();)
-        count += ((List)it.next()).size();
+      for (Iterator<List<CachedCallableStatement>> it = cs.values().iterator(); it.hasNext();)
+        count += it.next().size();
     }
     return count;
   }
 
   /**
    * Returns the current number of {@link CallableStatement} instances that are in use.
+   * @return current open CallableStatement count
    */
   public int getOpenCallableStatementCount()
   {
@@ -846,20 +942,25 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   }
 
   /**
-   * Returns the current number of non-cachable statements that are in use.
-   * (Currently only some {@link PreparedStatement} instances are non-cachable
+   * Returns the current number of non-cacheable statements that are in use.
+   * (Currently only some {@link PreparedStatement} instances are non-cacheable
    * by virtue of a request made at creation for support for auto-generated keys.)
+   * @return current open non-cacheable Statement count
    * @see snaq.db.CacheConnection#prepareStatement(String, int)
    * @see snaq.db.CacheConnection#prepareStatement(String, int[])
    * @see snaq.db.CacheConnection#prepareStatement(String, String[])
    */
-  public int getOpenNonCachableStatementCount()
+  public int getOpenNonCacheableStatementCount()
   {
-    synchronized (nonCachable) { return nonCachable.size(); }
+    synchronized (nonCacheable)
+    {
+      return nonCacheable.size();
+    }
   }
 
   /**
    * Flushes the spare {@link Statement} caches for this connection.
+   * @throws SQLException
    */
   protected void flushSpareStatements() throws SQLException
   {
@@ -877,6 +978,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Flushes the open {@link Statement} cache for this connection.
+   * @throws SQLException
    */
   protected void flushOpenStatements() throws SQLException
   {
@@ -894,6 +996,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Flushes the spare {@link PreparedStatement} cache for this connection.
+   * @throws SQLException
    */
   protected void flushSparePreparedStatements() throws SQLException
   {
@@ -915,6 +1018,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Flushes the open {@link PreparedStatement} cache for this connection.
+   * @throws SQLException
    */
   protected void flushOpenPreparedStatements() throws SQLException
   {
@@ -932,6 +1036,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Flushes the spare {@link CallableStatement} cache for this connection.
+   * @throws SQLException
    */
   protected void flushSpareCallableStatements() throws SQLException
   {
@@ -953,6 +1058,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Flushes the open {@link CallableStatement} cache for this connection.
+   * @throws SQLException
    */
   protected void flushOpenCallableStatements() throws SQLException
   {
@@ -969,20 +1075,27 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   }
 
   /**
-   * Flushes the non-cachable {@link Statement} instances for this connection.
+   * Flushes the non-cacheable {@link Statement} instances for this connection.
+   * @throws SQLException
    */
-  protected void flushOpenNonCachableStatements() throws SQLException
+  protected void flushOpenNonCacheableStatements() throws SQLException
   {
-    synchronized(nonCachable)
+    synchronized(nonCacheable)
     {
-      int count = nonCachable.size();
+      int count = nonCacheable.size();
       if (count > 0)
       {
-        log_debug(pool.getName() + ": Closing " + count + " open non-cachable Statement" + (count > 1 ? "s" : ""));
-        while (!nonCachable.isEmpty())
+        log_debug(pool.getName() + ": Closing " + count + " open non-cacheable Statement" + (count > 1 ? "s" : ""));
+        while (!nonCacheable.isEmpty())
         {
-          try { ((Statement)nonCachable.remove(0)).close(); }
-          catch (SQLException sqlx) { logger.warn(pool.getName() + ": " + sqlx.getMessage(), sqlx); }
+          try
+          {
+            ((Statement)nonCacheable.remove(0)).close();
+          }
+          catch (SQLException sqlx)
+          {
+            logger.warn(pool.getName() + ": " + sqlx.getMessage(), sqlx);
+          }
         }
       }
     }
@@ -991,11 +1104,12 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   /**
    * Destroys the wrapped {@link Connection} instance.
    * This method should only be called by {@link ConnectionPool} instances.
+   * @throws SQLException
    */
   public void release() throws SQLException
   {
     open = false;
-    List<SQLException> list = new ArrayList<SQLException>();
+    List<SQLException> list = new ArrayList<>();
 
     try
     {
@@ -1029,7 +1143,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
     try
     {
-      flushOpenNonCachableStatements();
+      flushOpenNonCacheableStatements();
     }
     catch (SQLException e)
     {
@@ -1057,74 +1171,97 @@ public final class CacheConnection implements Connection, StatementListener, Reu
     }
   }
 
+  @Override
   public boolean isClosed() throws SQLException
   {
     return !open;
   }
 
+  @Override
   public DatabaseMetaData getMetaData() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.getMetaData();
   }
 
+  @Override
   public void setReadOnly(boolean readOnly) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     con.setReadOnly(readOnly);
   }
 
+  @Override
   public boolean isReadOnly() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.isReadOnly();
   }
 
+  @Override
   public void setCatalog(String catalog) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     con.setCatalog(catalog);
   }
 
+  @Override
   public String getCatalog() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.getCatalog();
   }
 
+  @Override
   public void setTransactionIsolation(int level) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     con.setTransactionIsolation(level);
   }
 
+  @Override
   public int getTransactionIsolation() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.getTransactionIsolation();
   }
 
+  @Override
   public SQLWarning getWarnings() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.getWarnings();
   }
 
+  @Override
   public void clearWarnings() throws SQLException
   {
-    if (!open && !closing) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open && !closing)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     con.clearWarnings();
   }
 
+  @Override
   public Map<String,Class<?>> getTypeMap() throws SQLException
   {
-    if (!open && !closing) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open && !closing)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.getTypeMap();
   }
 
+  @Override
   public void setTypeMap(Map<String,Class<?>> map) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     con.setTypeMap(map);
   }
 
@@ -1132,69 +1269,96 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   // Interface methods from JDBC 3.0
   //**********************************
 
+  @Override
   public void setHoldability(int holdability) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     con.setHoldability(holdability);
   }
 
+  @Override
   public int getHoldability() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.getHoldability();
   }
 
+  @Override
   public Savepoint setSavepoint() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.setSavepoint();
   }
 
+  @Override
   public Savepoint setSavepoint(String name) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.setSavepoint(name);
   }
 
+  @Override
   public void rollback(Savepoint savepoint) throws SQLException
   {
-    if (!open && !closing) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open && !closing)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     con.rollback(savepoint);
   }
 
+  @Override
   public void releaseSavepoint(Savepoint savepoint) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     con.releaseSavepoint(savepoint);
   }
 
+  @Override
   public PreparedStatement prepareStatement(String sql, int autoGeneratedKeys) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     CachedPreparedStatement x = new CachedPreparedStatement(sql, con.prepareStatement(sql, autoGeneratedKeys));
     x.setCacheable(false);
     x.setStatementListener(this);
-    synchronized(nonCachable) { nonCachable.add(x); }
+    synchronized(nonCacheable)
+    {
+      nonCacheable.add(x);
+    }
     return x;
   }
 
+  @Override
   public PreparedStatement prepareStatement(String sql, int[] columnIndexes) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     CachedPreparedStatement x = new CachedPreparedStatement(sql, con.prepareStatement(sql, columnIndexes));
     x.setCacheable(false);
     x.setStatementListener(this);
-    synchronized(nonCachable) { nonCachable.add(x); }
+    synchronized(nonCacheable)
+    {
+      nonCacheable.add(x);
+    }
     return x;
   }
 
+  @Override
   public PreparedStatement prepareStatement(String sql, String[] columnNames) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     CachedPreparedStatement x = new CachedPreparedStatement(sql, con.prepareStatement(sql, columnNames));
     x.setCacheable(false);
     x.setStatementListener(this);
-    synchronized(nonCachable) { nonCachable.add(x); }
+    synchronized(nonCacheable)
+    {
+      nonCacheable.add(x);
+    }
     return x;
   }
 
@@ -1207,11 +1371,13 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   // Interface methods from JDBC 4.0
   //**********************************
   // --- JDBC 4.0 ---
+  @Override
   public boolean isWrapperFor(Class<?> iface) throws SQLException
   {
     return iface.isInstance(con);
   }
 
+  @Override
   public <T> T unwrap(Class<T> iface) throws SQLException
   {
     try
@@ -1223,76 +1389,141 @@ public final class CacheConnection implements Connection, StatementListener, Reu
     }
     catch (ClassCastException ccx)
     {
-      SQLException sqlx = new SQLException("Invalid type specified for unwrap operation: " + iface.getName());
-      sqlx.initCause(ccx);
-      throw sqlx;
+      throw new SQLException("Invalid type specified for unwrap operation: " + iface.getName(), ccx);
     }
   }
 
+  @Override
   public Clob createClob() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.createClob();
   }
 
+  @Override
   public Blob createBlob() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.createBlob();
   }
 
+  @Override
   public NClob createNClob() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.createNClob();
   }
 
+  @Override
   public SQLXML createSQLXML() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.createSQLXML();
   }
 
+  @Override
   public boolean isValid(int timeout) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.isValid(timeout);
   }
 
+  @Override
   public void setClientInfo(String name, String value) throws SQLClientInfoException
   {
-//    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+//    if (!open)
+//      throw new SQLException(MSG_CONNECTION_CLOSED);
     con.setClientInfo(name, value);
   }
 
+  @Override
   public void setClientInfo(Properties properties) throws SQLClientInfoException
   {
-//    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+//    if (!open)
+//      throw new SQLException(MSG_CONNECTION_CLOSED);
     con.setClientInfo(properties);
   }
 
+  @Override
   public String getClientInfo(String name) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.getClientInfo(name);
   }
 
+  @Override
   public Properties getClientInfo() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.getClientInfo();
   }
 
+  @Override
   public Array createArrayOf(String typeName, Object[] elements) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.createArrayOf(typeName, elements);
   }
 
+  @Override
   public Struct createStruct(String typeName, Object[] attributes) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_CONNECTION_CLOSED);
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
     return con.createStruct(typeName, attributes);
   }
   // --- End JDBC 4.0 ---
+
+  //**********************************
+  // Interface methods from JDBC 4.1
+  //**********************************
+  // --- JDBC 4.1 ---
+  @Override
+  public void setSchema(String schema) throws SQLException
+  {
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
+    con.setSchema(schema);
+  }
+
+  @Override
+  public String getSchema() throws SQLException
+  {
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
+    return con.getSchema();
+  }
+
+  @Override
+  public void abort(Executor executor) throws SQLException
+  {
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
+    con.abort(executor);
+  }
+
+  @Override
+  public void setNetworkTimeout(Executor executor, int milliseconds) throws SQLException
+  {
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
+    con.setNetworkTimeout(executor, milliseconds);
+  }
+
+  @Override
+  public int getNetworkTimeout() throws SQLException
+  {
+    if (!open)
+      throw new SQLException(MSG_CONNECTION_CLOSED);
+    return con.getNetworkTimeout();
+  }
+  // --- End JDBC 4.1 ---
 }

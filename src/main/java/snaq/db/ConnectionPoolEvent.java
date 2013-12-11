@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -45,12 +45,16 @@ import snaq.util.ObjectPoolEvent;
  *
  * @author Giles Winstanley
  */
-public class ConnectionPoolEvent extends ObjectPoolEvent
+public class ConnectionPoolEvent extends ObjectPoolEvent<CacheConnection>
 {
-  protected ConnectionPoolEvent(ObjectPool pool, int type)
+  @SuppressWarnings("unchecked")
+  protected ConnectionPoolEvent(ObjectPool<CacheConnection> pool, int type)
   {
     super(pool, type);
   }
 
-  public ConnectionPool getConnectionPool() { return (ConnectionPool)getSource(); }
+  public ConnectionPool getConnectionPool()
+  {
+    return (ConnectionPool)getSource();
+  }
 }

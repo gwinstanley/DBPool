@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -37,7 +37,8 @@
  */
 package snaq.db;
 
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.SQLException;
 
 /**
  * Interface for validating database connections.
@@ -60,6 +61,7 @@ public interface ConnectionValidator
    * Determines whether the specified connection is good to use.
    * @param con {@link Connection} instance to check for validity
    * @return true if the specified connection is good to use, false otherwise
+	 * @throws SQLException
    */
   boolean isValid(Connection con) throws SQLException;
 }

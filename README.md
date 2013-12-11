@@ -1,7 +1,7 @@
 # DBPool : Java Database Connection Pooling
 
 ## What is DBPool?
-A Java-based database connection pooling utility, supporting time-based expiry, statement caching, connection validation, and easy configuration using a pool manager.
+A Java-based database connection pooling utility, supporting time-based idle timeout, statement caching, connection validation, and easy configuration using a pool manager.
 
 ### Why would I use it?
 
@@ -13,10 +13,8 @@ DBPool is available under a BSD-style licence, which can be viewed in the LICENS
 
 ## What are the requirements/dependencies?
 
-The JDBC specification has changed out of step with the various Java Platform releases. Many pooling libraries solve this by using dynamic method resolution which allows a single codebase to work for all platforms, but at the cost of performance. DBPool aims to maintain its high-performance approach, but as a result you'll need to check carefully which version best suits your Java platform. It is highly recommended to use the most recent stable release possible, for reasons of performance, reliability, and features.
-
-* **Requirements:** Java 1.6.x or above, supporting JDBC 3.0 or later. [Apache Maven](http://maven.apache.org/) is recommended to build the source code.
-* **Dependencies:** [Apache Commons Logging](http://commons.apache.org/logging/)
+* **Requirements:** DBPool 6.0 requires Java Platform 7 (also known as Java 1.7.x) or above, with support for JDBC 4.1 features. If rebuilding from the source code, [Apache Maven](http://maven.apache.org/) is recommended as a build tool.
+* **Dependencies:** [SLF4J](http://www.slf4j.org/)
 
 ## Where can I find more detailed information?
 

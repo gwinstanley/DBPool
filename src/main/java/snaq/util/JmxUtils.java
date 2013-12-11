@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -35,7 +35,7 @@
   ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   ---------------------------------------------------------------------------
  */
-package snaq.db.jmx;
+package snaq.util;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -49,23 +49,27 @@ import javax.management.modelmbean.ModelMBeanInfo;
 import javax.management.modelmbean.ModelMBeanInfoSupport;
 import javax.management.modelmbean.ModelMBeanOperationInfo;
 import javax.management.modelmbean.RequiredModelMBean;
-import snaq.db.ConnectionPool;
 import snaq.util.ObjectPool;
+import snaq.util.Reusable;
 
 /**
- * Utility class for providing DBPool JMX support.
- * 
+ * Utility class for providing ObjectPool JMX support.
+ *
  * @author Giles Winstanley
  */
 public class JmxUtils
 {
   /**
-   * Creates a ModelMBean for the specified {@link ObjectPool}.
+   * Creates a {@code ModelMBean} for the specified {@link ObjectPool}.
+   * @param <T> object type of pool for MBean
+   * @param pool pool for which to create MBean
+   * @return A {@code ModelMBean} for the specified {@link ObjectPool}
+   * @throws Exception
    */
-  public static final ModelMBean createObjectPoolMBean(ObjectPool pool) throws Exception
+  public static <T extends Reusable> ModelMBean createObjectPoolMBean(ObjectPool<T> pool) throws Exception
   {
-    List<ModelMBeanAttributeInfo> ai = new ArrayList<ModelMBeanAttributeInfo>();
-    List<ModelMBeanOperationInfo> oi = new ArrayList<ModelMBeanOperationInfo>();
+    List<ModelMBeanAttributeInfo> ai = new ArrayList<>();
+    List<ModelMBeanOperationInfo> oi = new ArrayList<>();
 
     String name = null;
     String desc = null;
@@ -160,13 +164,13 @@ public class JmxUtils
 
     // Create MBean.
     ModelMBeanInfo mbi = new ModelMBeanInfoSupport(
-            pool.getClass().getName(),
-            pool.toString(),
-            ai.toArray(new ModelMBeanAttributeInfo[0]),
-            null,
-            oi.toArray(new ModelMBeanOperationInfo[0]),
-            null
-            );
+      pool.getClass().getName(),
+      pool.toString(),
+      ai.toArray(new ModelMBeanAttributeInfo[0]),
+      null,
+      oi.toArray(new ModelMBeanOperationInfo[0]),
+      null
+    );
     ModelMBean mmb = new RequiredModelMBean(mbi);
     mmb.setManagedResource(pool, "ObjectReference");
     return mmb;

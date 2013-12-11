@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -37,7 +37,8 @@
  */
 package snaq.db;
 
-import java.sql.*;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 
 /**
  * {@link ConnectionValidator} implementation that validates database
@@ -46,7 +47,7 @@ import java.sql.*;
  * By default it does not check if any results are returned.
  * <p>This class is provided as a convenience for providing
  * connection validation.</p>
- * 
+ *
  * @author Giles Winstanley
  */
 public class SimpleQueryValidator extends QueryValidator
@@ -58,7 +59,8 @@ public class SimpleQueryValidator extends QueryValidator
 
   /**
    * Creates a new {@code SimpleQueryValidator} instance using the
-   * specified SQL query string.
+   * specified SQL query string. The created instance will not check for
+   * existence of returned results, only that the query succeeded.
    * @param query SQL query to issue for validation
    */
   public SimpleQueryValidator(final String query)
@@ -82,6 +84,7 @@ public class SimpleQueryValidator extends QueryValidator
    * Returns the SQL query string to be issued to the database.
    * @return query string in SQL syntax
    */
+  @Override
   public String getQueryString()
   {
     return query;
@@ -101,6 +104,7 @@ public class SimpleQueryValidator extends QueryValidator
    * @return boolean indicating whether checked results indicated a valid connection
    * @throws SQLException if checking the results throws such an exception
    */
+  @Override
   public boolean checkResults(ResultSet results) throws SQLException
   {
     return checkHasResults ? results.next() : true;

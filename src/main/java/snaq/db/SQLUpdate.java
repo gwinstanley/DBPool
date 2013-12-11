@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -41,12 +41,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.StringTokenizer;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Command-line utility to send SQL commands to a database.
@@ -71,12 +73,10 @@ import org.apache.commons.logging.LogFactory;
  * @see snaq.db.ConnectionPoolManager
  * @author Giles Winstanley
  */
-public class SQLUpdate
+public class SQLUpdate implements AutoCloseable
 {
-  /** Apache Commons Logging shared instance for writing log entries. */
-  protected static final Log logger = LogFactory.getLog(SQLUpdate.class);
-  /** Platform line-separator. */
-  private final static String LSEP = System.getProperty("line.separator");
+  /** SLF4J shared instance for writing log entries. */
+  protected static final Logger logger = LoggerFactory.getLogger(SQLUpdate.class);
   /** Pool manager for defining database connections. */
   private ConnectionPoolManager cpm;
   /** Database connection for issuing SQL statements. */
@@ -84,23 +84,52 @@ public class SQLUpdate
   /** Statement to use for executing SQL. */
   private Statement statement;
 
-  public SQLUpdate(String db) throws IOException
+  public SQLUpdate(String poolname) throws IOException, SQLException
   {
     cpm = ConnectionPoolManager.getInstance();
+    openConnection(poolname);
+  }
+
+  public SQLUpdate(Connection con) throws SQLException
+  {
+    openConnection(con);
   }
 
   /**
-   * Opens a database connection using a specified connection pool.
+   * Opens a database connection to create a statement for SQL updates.
+   * @param con connection to use
+   */
+  private void openConnection(Connection con) throws SQLException
+  {
+    if (con == null || con.isClosed())
+      throw new IllegalArgumentException("Please specify a valid connection");
+    try
+    {
+      this.con = con;
+      this.statement = con.createStatement();
+    }
+    catch (SQLException sqlx)
+    {
+      try { statement.close(); }
+      catch (SQLException sqlx2) {}
+      try { con.close(); }
+      catch (SQLException sqlx2) {}
+    }
+  }
+
+  /**
+   * Opens a database connection using a specified connection pool
+   * to create a statement for SQL updates.
    * @param poolname name of the connection pool from which to get a connection
    */
   private void openConnection(String poolname) throws SQLException
   {
     if (poolname == null || poolname.equals(""))
-      throw new SQLException("Please specify the name of a defined connection pool");
+      throw new IllegalArgumentException("Please specify the name of a defined connection pool");
     try
     {
-      con = cpm.getConnection(poolname);
-      statement = con.createStatement();
+      this.con = cpm.getConnection(poolname);
+      this.statement = con.createStatement();
     }
     catch (SQLException sqlx)
     {
@@ -114,23 +143,27 @@ public class SQLUpdate
   /**
    * Closes the current database connection.
    */
-  private void closeConnection()
+  @Override
+  public void close()
   {
     try { statement.close(); }
     catch (SQLException sqlx) { sqlx.printStackTrace(); }
     try { con.close(); }
     catch (SQLException sqlx) { sqlx.printStackTrace(); }
-    cpm.release();
+    if (cpm != null)
+      cpm.release();
   }
 
   /**
    * Issues a statement to the database.
+   * @param sql SQL command to issue
+   * @throws SQLException
    */
-  private void doStatement(String sql) throws SQLException
+  public void doStatement(String sql) throws SQLException
   {
     try
     {
-      logger.debug("SQL: " + sql);
+      logger.trace(sql);
       statement.executeUpdate(sql);
     }
     catch (SQLException sqlx)
@@ -144,23 +177,18 @@ public class SQLUpdate
    * Loads a text file into a string.
    * @param f {@link File} containing text to load
    * @return {@link String} containing the text loaded from the specified file
+   * @throws IOException
    */
-  public static String loadTextFile(File f) throws IOException
+  public final static String loadTextFile(File f) throws IOException
   {
-    FileInputStream fis = null;
-    try
+    try(FileInputStream fis = new FileInputStream(f);
+        ByteArrayOutputStream bao = new ByteArrayOutputStream())
     {
-      ByteArrayOutputStream bao = new ByteArrayOutputStream();
-      fis = new FileInputStream(f);
       byte[] b = new byte[4096];
       int n;
       while ((n = fis.read(b)) != -1)
         bao.write(b, 0, n);
       return new String(bao.toByteArray());
-    }
-    finally
-    {
-      fis.close();
     }
   }
 
@@ -173,20 +201,20 @@ public class SQLUpdate
   public static String[] splitSQL(String text, String separator)
   {
     // Create list to hold SQL statements.
-    List<String> list = new ArrayList<String>();
+    List<String> list = new ArrayList<>();
     if (separator == null)
     {
       StringTokenizer st = new StringTokenizer(text, "\n\r");
       while (st.hasMoreTokens())
       {
         String token = st.nextToken().trim();
-        if (!token.startsWith("#") && !token.equals(""))
+        if (!token.startsWith("#") && !"".equals(token))
           list.add(token);
       }
     }
     else
     {
-      StringBuffer sb = new StringBuffer();
+      StringBuilder sb = new StringBuilder();
       StringTokenizer st = new StringTokenizer(text, "\n\r");
       while (st.hasMoreTokens())
       {
@@ -215,11 +243,7 @@ public class SQLUpdate
     return list.toArray(new String[0]);
   }
 
-  /**
-   * Allows command-line issuing of SQL statements to a database defined
-   * in the pool manager properties file.
-   */
-  public static void main(String args[])
+  public static void main(String args[]) throws Exception
   {
     String cn = SQLUpdate.class.getName();
     if (args == null || args.length < 2)
@@ -228,7 +252,7 @@ public class SQLUpdate
       System.exit(0);
     }
 
-    String db = args[0];
+    String poolName = args[0];
     String file = args[1];
     String separator = args.length < 3 ? null : args[2];
     if (separator != null)
@@ -251,13 +275,10 @@ public class SQLUpdate
     String[] sql = splitSQL(contents, separator);
 
     // Open database connection, issue SQL, then close connection.
-    SQLUpdate sqlUpdate = null;
-    try
+    try(SQLUpdate sqlUpdate = new SQLUpdate(poolName))
     {
-      sqlUpdate = new SQLUpdate(db);
-      sqlUpdate.openConnection(db);
-      for (int i = 0; i < sql.length; i++)
-        sqlUpdate.doStatement(sql[i]);
+      for (String s : sql)
+        sqlUpdate.doStatement(s);
     }
     catch (IOException iox)
     {
@@ -268,10 +289,6 @@ public class SQLUpdate
     catch (SQLException sqlx)
     {
       sqlx.printStackTrace();
-    }
-    finally
-    {
-      sqlUpdate.closeConnection();
     }
     System.out.println();
   }

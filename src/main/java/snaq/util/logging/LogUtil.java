@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -123,7 +123,7 @@ public class LogUtil
    * method is called.
    * @param writer {@code PrintWriter} to which to write log entries
    */
-  public synchronized void setLog(PrintWriter writer)
+  public final synchronized void setLog(PrintWriter writer)
   {
     setLog(writer, true);
   }
@@ -150,6 +150,7 @@ public class LogUtil
 
   /**
    * Returns the current {@code PrintWriter} used to write to the log.
+   * @return The current {@code PrintWriter} used to write to the log
    */
   public synchronized PrintWriter getLogWriter()
   {
@@ -305,23 +306,35 @@ public class LogUtil
    * Determines whether calls to the logging methods actually write to the log.
    * @param b flag indicating whether to write to the log
    */
-  public synchronized void setLogging(boolean b) { logging = b; }
+  public synchronized void setLogging(boolean b)
+  {
+    logging = b;
+  }
 
   /**
    * Returns whether calls to the logging methods actually write to the log.
    * @return true if logging is enabled, false otherwise.
    */
-  public synchronized boolean isLogging() { return logging; }
+  public synchronized boolean isLogging()
+  {
+    return logging;
+  }
 
   /**
    * Determines whether to perform debug logging.
    * @param b flag indicating whether to perform debug logging
    */
-  public synchronized void setDebug(boolean b) { debug = b; }
+  public synchronized void setDebug(boolean b)
+  {
+    debug = b;
+  }
 
   /**
    * Returns whether debug logging is enabled.
    * @return true if debug logging is enabled, false otherwise.
    */
-  public synchronized boolean isDebug() { return debug; }
+  public synchronized boolean isDebug()
+  {
+    return debug;
+  }
 }

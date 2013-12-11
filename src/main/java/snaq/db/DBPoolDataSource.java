@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -42,9 +42,11 @@ import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
 import javax.sql.DataSource;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import snaq.util.ObjectPool;
 
 /**
  * A {@link DataSource} implementation which produces {@link Connection}
@@ -57,8 +59,8 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 {
   /** Name prefix to use for {@code ConnectionPool} instance (JNDI name is appended). */
   protected static final String POOL_NAME_PREFIX = "DBPoolDataSource-";
-  /** Apache Commons Logging shared instance for writing log entries. */
-  protected static final Log logger = LogFactory.getLog(DBPoolDataSource.class);
+  /** SLF4J shared instance for writing log entries. */
+  protected static final Logger logger = LoggerFactory.getLogger(DBPoolDataSource.class);
   /** {@code Driver} to use for database access. */
   protected transient Driver driver;
   /** {@code ConnectionPool} instance used to source connections. */
@@ -68,18 +70,12 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   // -------------------------------
   // Standard DataSource properties.
   // -------------------------------
-//  private String dataSourceName;
   /** Description of this DataSource. */
   private String description;
-//  private String databaseName;
-//  private String networkProtocol;
   /** Username for accessing the database. */
   private String user;
   /** Password for accessing the database. */
   private String password;
-//  private int portNumber;
-//  private String roleName;
-//  private String serverName;
   // -----------------------------
   // Custom DataSource properties.
   // -----------------------------
@@ -95,6 +91,8 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   private String validatorClassName;
   /** SQL query string to use for validating database connections. */
   private String validationQuery;
+  /** Pool selection strategy. */
+  private String selection;
   /** Connection pool {@code minPool} parameter. */
   private int minPool = 0;
   /** Connection pool {@code maxPool} parameter. */
@@ -105,7 +103,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   private int idleTimeout = 0;
   /** Timeout in seconds for database connection attempts. */
   private int loginTimeout = 3;
-  /** Flag detemining whether a pool shutdown-hook is registered. */
+  /** Flag determining whether a pool shutdown-hook is registered. */
   private boolean shutdownHook = false;
 
   /**
@@ -127,7 +125,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   }
 
   /**
-   * Deregisters a registered shutdown hook for this ConnectionPoolManager instance.
+   * Unregisters a registered shutdown hook for this ConnectionPoolManager instance.
    */
   public synchronized void removeShutdownHook()
   {
@@ -138,6 +136,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Writes a message to the log.
+   * @param message message to write
    */
   protected synchronized void log(String message)
   {
@@ -149,6 +148,8 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Writes a message with a {@code Throwable} to the log file.
+   * @param message message to write
+   * @param throwable
    */
   protected synchronized void log(String message, Throwable throwable)
   {
@@ -177,7 +178,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
         driver = (Driver)Class.forName(getDriverClassName()).newInstance();
         DriverManager.registerDriver(driver);
       }
-      catch (Exception ex)
+      catch (ClassNotFoundException | InstantiationException | IllegalAccessException | SQLException ex)
       {
         SQLException sqlx = new SQLException("Unable to register JDBC driver: " + getDriverClassName());
         sqlx.initCause(ex);
@@ -195,35 +196,51 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
       pool.registerShutdownHook();
 
     // Set ConnectionValidator as required.
-    if (validatorClassName != null && !validatorClassName.equals(""))
+    if (validatorClassName != null && !"".equals(validatorClassName))
     {
       try
       {
         ConnectionValidator cv = (ConnectionValidator)Class.forName(validatorClassName).newInstance();
         pool.setValidator(cv);
       }
-      catch (Exception ex)
+      catch (ClassNotFoundException | InstantiationException | IllegalAccessException ex)
       {
         log("Unable to instantiate validator class: " + validatorClassName);
       }
     }
-    else if (validationQuery != null && !validationQuery.equals(""))
+    else if (validationQuery != null && !"".equals(validationQuery))
     {
       ConnectionValidator cv = new SimpleQueryValidator(validationQuery);
       pool.setValidator(cv);
     }
 
     // Set PasswordDecoder as required.
-    if (passwordDecoderClassName != null && !passwordDecoderClassName.equals(""))
+    if (passwordDecoderClassName != null && !"".equals(passwordDecoderClassName))
     {
       try
       {
         PasswordDecoder pd = (PasswordDecoder)Class.forName(passwordDecoderClassName).newInstance();
         pool.setPasswordDecoder(pd);
       }
-      catch (Exception ex)
+      catch (ClassNotFoundException | InstantiationException | IllegalAccessException ex)
       {
         log("Unable to instantiate password decoder class: " + passwordDecoderClassName);
+      }
+    }
+
+    // Set selection stragegy as required.
+    if (selection != null)
+    {
+      switch (selection)
+      {
+        case "FIFO":
+          pool.setSelectionStrategy(ObjectPool.Strategy.SELECT_FIFO);
+          break;
+        case "RANDOM":
+          pool.setSelectionStrategy(ObjectPool.Strategy.SELECT_RANDOM);
+          break;
+        case "LIFO":
+        default:
       }
     }
   }
@@ -233,6 +250,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
    * @return a {@code Connection} instance, or null if unable to connect
    * @throws java.sql.SQLException if a database access error occurs
    */
+  @Override
   public synchronized Connection getConnection() throws SQLException
   {
     if (pool == null)
@@ -248,6 +266,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
    * @return a {@code Connection} instance, or null if unable to connect
    * @throws java.sql.SQLException if a database access error occurs
    */
+  @Override
   public synchronized Connection getConnection(String username, String password) throws SQLException
   {
     throw new UnsupportedOperationException("Unsupport method; use getConnection() instead.");
@@ -266,6 +285,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Returns the description of this DataSource.
+   * @return The description of this DataSource
    */
   public synchronized String getDescription()
   {
@@ -274,6 +294,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Sets the description of this DataSource.
+   * @param description description
    */
   public synchronized void setDescription(String description)
   {
@@ -282,6 +303,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Returns the username to use with this DataSource.
+   * @return The username to use with this DataSource
    */
   public synchronized String getUser()
   {
@@ -289,31 +311,19 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   }
 
   /**
-   * Alias for {@link #getUser()}.
-   * @deprecated Use {@link #getUser()} method instead.
-   */
-  @Deprecated
-  public String getUsername() { return getUser(); }
-
-  /**
    * Sets the username to use with this DataSource.
+   * @param username username
    */
-  public synchronized void setUser(String user)
+  public synchronized void setUser(String username)
   {
     if (pool != null)
-      throw new UnsupportedOperationException("Cannot call this method after DBPoolDataSource has been initialized");
-    this.user = user;
+      throw new IllegalStateException("Cannot call this method after DBPoolDataSource has been initialized");
+    this.user = username;
   }
 
   /**
-   * Alias for {@link #setUser(String)}.
-   * @deprecated Use {@link #setUser(String)} method instead.
-   */
-  @Deprecated
-  public void setUsername(String username) { setUser(username); }
-
-  /**
    * Returns the password to use with this DataSource.
+   * @return The password to use with this DataSource
    */
   public synchronized String getPassword()
   {
@@ -322,16 +332,18 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Sets the password to use with this DataSource.
+   * @param password password
    */
   public synchronized void setPassword(String password)
   {
     if (pool != null)
-      throw new UnsupportedOperationException("Cannot call this method after DBPoolDataSource has been initialized");
+      throw new IllegalStateException("Cannot call this method after DBPoolDataSource has been initialized");
     this.password = password;
   }
 
   /**
    * Returns the JNDI name of the {@code DBPoolDataSource} instance.
+   * @return The JNDI name of the {@code DBPoolDataSource} instance
    */
   public synchronized String getName()
   {
@@ -340,6 +352,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Sets the JNDI name of the {@code DBPoolDataSource} instance.
+   * @param name JNDI name
    */
   public synchronized void setName(String name)
   {
@@ -348,6 +361,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Returns the fully-qualified class name for the JDBC driver to use.
+   * @return The fully-qualified class name for the JDBC driver to use
    */
   public synchronized String getDriverClassName()
   {
@@ -355,17 +369,19 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   }
 
   /**
-   * Sets the fully-qualified class name for the JDBC driver to use.
+   * Sets the class name for the JDBC driver to use.
+   * @param driverClassName fully-qualified driver class name to use
    */
   public synchronized void setDriverClassName(String driverClassName)
   {
     if (pool != null)
-      throw new UnsupportedOperationException("Cannot call this method after DBPoolDataSource has been initialized");
+      throw new IllegalStateException("Cannot call this method after DBPoolDataSource has been initialized");
     this.driverClassName = driverClassName;
   }
 
   /**
-   * Returns the class name of the {@link PasswordDecoder} to use with this DataSource.
+   * Returns the fully-qualified class name of the {@link PasswordDecoder}.
+   * @return The fully-qualified class name of the {@link PasswordDecoder}
    */
   public synchronized String getPasswordDecoderClassName()
   {
@@ -373,20 +389,21 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   }
 
   /**
-   * Sets the class name of the {@link PasswordDecoder} to use with this
-   * DataSource. The specified class should implement the
-   * {@code PasswordDecoder} interface, and have a no-argument constructor
-   * which can be used to instantiate it for use.
+   * Sets the class name of the {@link PasswordDecoder} to use.
+   * The specified class should implement the {@code PasswordDecoder} interface,
+   * and have a no-argument constructor which can be used to instantiate it for use.
+   * @param decoderClassName fully-qualified class name of password decoder to use
    */
   public synchronized void setPasswordDecoderClassName(String decoderClassName)
   {
     if (pool != null)
-      throw new UnsupportedOperationException("Cannot call this method after DBPoolDataSource has been initialized");
+      throw new IllegalStateException("Cannot call this method after DBPoolDataSource has been initialized");
     this.passwordDecoderClassName = decoderClassName;
   }
 
   /**
-   * Returns the class name of the {@link ConnectionValidator} to use with this DataSource.
+   * Returns the fully-qualified class name of the {@link ConnectionValidator}.
+   * @return The fully-qualified class name of the {@link ConnectionValidator}
    */
   public synchronized String getValidatorClassName()
   {
@@ -394,15 +411,16 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   }
 
   /**
-   * Sets the class name of the {@link ConnectionValidator} to use with this
-   * DataSource. The specified class should implement the
-   * {@code ConnectionValidator} interface, and have a no-argument constructor
-   * which can be used to instantiate it for use.
+   * Sets the class name of the {@link ConnectionValidator} to use.
+   * The specified class should implement the {@code ConnectionValidator}
+   * interface, and have a no-argument constructor which can be used to
+   * instantiate it for use.
+   * @param validatorClassName fully-qualified class name of validator to use
    */
   public synchronized void setValidatorClassName(String validatorClassName)
   {
     if (pool != null)
-      throw new UnsupportedOperationException("Cannot call this method after DBPoolDataSource has been initialized");
+      throw new IllegalStateException("Cannot call this method after DBPoolDataSource has been initialized");
     this.validatorClassName = validatorClassName;
   }
 
@@ -411,6 +429,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
    * This query is only used if the {@code validationClassName} has not
    * been explicitly set, in which case this query string is used with an
    * instance of {@link SimpleQueryValidator}.
+   * @return SQL query string used for validation
    */
   public synchronized String getValidationQuery()
   {
@@ -422,16 +441,18 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
    * This query is only used if the {@code validationClassName} has not
    * been explicitly set, in which case this query string is used with an
    * instance of {@link SimpleQueryValidator}.
+   * @param validationQuery SQL query to use for validation
    */
   public synchronized void setValidationQuery(String validationQuery)
   {
     if (pool != null)
-      throw new UnsupportedOperationException("Cannot call this method after DBPoolDataSource has been initialized");
+      throw new IllegalStateException("Cannot call this method after DBPoolDataSource has been initialized");
     this.validationQuery = validationQuery;
   }
 
   /**
    * Returns the JDBC URL to use with this DataSource.
+   * @return The JDBC URL to use with this DataSource
    */
   public synchronized String getUrl()
   {
@@ -440,16 +461,18 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Sets the JDBC URL to use with this DataSource.
+   * @param url JDBC URL to use
    */
   public synchronized void setUrl(String url)
   {
     if (pool != null)
-      throw new UnsupportedOperationException("Cannot call this method after DBPoolDataSource has been initialized");
+      throw new IllegalStateException("Cannot call this method after DBPoolDataSource has been initialized");
     this.url = url;
   }
 
   /**
    * Returns the minimum number of pooled connections in the underlying {@link ConnectionPool}.
+   * @return The minimum number of pooled connections in the underlying {@link ConnectionPool}
    */
   public synchronized int getMinPool()
   {
@@ -458,6 +481,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Sets the minimum number of pooled connections in the underlying {@link ConnectionPool}.
+   * @param minPool minimum number of pooled connections
    */
   public synchronized void setMinPool(int minPool)
   {
@@ -468,6 +492,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Returns the maximum number of pooled connections in the underlying {@link ConnectionPool}.
+   * @return The maximum number of pooled connections in the underlying {@link ConnectionPool}
    */
   public synchronized int getMaxPool()
   {
@@ -476,6 +501,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Sets the maximum number of pooled connections in the underlying {@link ConnectionPool}.
+   * @param maxPool maximum number of pooled connections
    */
   public synchronized void setMaxPool(int maxPool)
   {
@@ -486,6 +512,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Returns the maximum number of connections in the underlying {@link ConnectionPool}.
+   * @return The maximum number of connections in the underlying {@link ConnectionPool}
    */
   public synchronized int getMaxSize()
   {
@@ -494,6 +521,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Sets the maximum number of connections in the underlying {@link ConnectionPool}.
+   * @param maxSize maximum number of connections
    */
   public synchronized void setMaxSize(int maxSize)
   {
@@ -504,6 +532,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Returns the idle timeout (seconds) for connections in the underlying {@link ConnectionPool}.
+   * @return The idle timeout (seconds) for connections in the underlying {@link ConnectionPool}
    */
   public synchronized int getIdleTimeout()
   {
@@ -512,6 +541,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Sets the idle timeout (seconds) for connections in the underlying {@link ConnectionPool}.
+   * @param idleTimeout idle timeout (seconds)
    */
   public synchronized void setIdleTimeout(int idleTimeout)
   {
@@ -521,22 +551,44 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   }
 
   /**
-   * Returns the idle timeout (seconds) for connections in the underlying {@link ConnectionPool}.
-   * @deprecated Use {@link #getIdleTimeout()} instead.
+   * Returns a string denoting the pool selection strategy to use (one of LIFO/FIFO/RANDOM).
+   * @return A string denoting the pool selection strategy to use (one of LIFO/FIFO/RANDOM)
    */
-  @Deprecated
-  public int getExpiryTime() { return getIdleTimeout(); }
+  public synchronized String getSelectionStrategy()
+  {
+    return this.selection;
+  }
 
   /**
-   * Sets the idle timeout (seconds) for connections in the underlying {@link ConnectionPool}.
-   * @deprecated Use {@link #setIdleTimeout(int)} instead.
+   * Sets the class name for the JDBC driver to use.
+   * @param selection string representing pool selection strategy to use (one of LIFO/FIFO/RANDOM)
    */
-  @Deprecated
-  public void setExpiryTime(int idleTimeout) { setIdleTimeout(idleTimeout); }
+  public synchronized void setSelectionStrategy(String selection)
+  {
+    if (pool != null)
+      throw new IllegalStateException("Cannot call this method after DBPoolDataSource has been initialized");
+    if (selection == null)
+    {
+      this.selection = null;
+      return;
+    }
+    String s = selection.trim().toUpperCase();
+    switch (s)
+    {
+      case "LIFO":
+      case "FIFO":
+      case "RANDOM":
+        this.selection = selection;
+        break;
+      default:
+        throw new IllegalArgumentException("Invalid selection strategy specified: " + selection);
+    }
+  }
 
   /**
    * Retrieves the log writer for this DataSource.
    */
+  @Override
   public synchronized PrintWriter getLogWriter()
   {
     return logWriter;
@@ -546,6 +598,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
    * Sets the log writer for this DataSource to the given {@code PrintWriter}.
    * @param out the new log writer; to disable logging, set to null
    */
+  @Override
   public synchronized void setLogWriter(PrintWriter out)
   {
     this.logWriter = out;
@@ -562,11 +615,13 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
    * initially zero.
    * @param seconds the DataSource login time limit
    */
+  @Override
   public synchronized void setLoginTimeout(int seconds)
   {
     this.loginTimeout = seconds;
   }
 
+  @Override
   public synchronized int getLoginTimeout()
   {
     return this.loginTimeout;
@@ -575,17 +630,26 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   /**
    * Releases the delegate {@link ConnectionPool} instance.
    */
-  public void release() { pool.release(); }
+  public void release()
+  {
+    pool.release();
+  }
 
   /**
    * Asynchronously releases the delegate {@link ConnectionPool} instance.
    */
-  public void releaseAsync() { pool.releaseAsync(); }
+  public void releaseAsync()
+  {
+    pool.releaseAsync();
+  }
 
   /**
    * Forcibly releases the delegate {@link ConnectionPool} instance.
    */
-  public void releaseForcibly() { pool.releaseForcibly(); }
+  public void releaseForcibly()
+  {
+    pool.releaseForcibly();
+  }
 
   @Override
   public synchronized String toString()
@@ -615,11 +679,13 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
     return sb.toString();
   }
 
+  @Override
   public synchronized boolean isWrapperFor(Class<?> iface) throws SQLException
   {
     return iface.isInstance(pool);
   }
 
+  @Override
   public synchronized <T> T unwrap(Class<T> iface) throws SQLException
   {
     try
@@ -628,9 +694,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
     }
     catch (ClassCastException ccx)
     {
-      SQLException sqlx = new SQLException("Invalid interface specified for unwrap operation: " + iface.getName());
-      sqlx.initCause(ccx);
-      throw sqlx;
+      throw new SQLException("Invalid interface specified for unwrap operation: " + iface.getName(), ccx);
     }
   }
 
@@ -638,17 +702,54 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   // Event listener methods to maintain synchronization with pool
   //*************************************************************
 
-  public void poolInitCompleted(ConnectionPoolEvent evt) {}
-  public void poolCheckOut(ConnectionPoolEvent evt) {}
-  public void poolCheckIn(ConnectionPoolEvent evt) {}
-  public void validationError(ConnectionPoolEvent evt) {}
-  public void maxPoolLimitReached(ConnectionPoolEvent evt) {}
-  public void maxPoolLimitExceeded(ConnectionPoolEvent evt) {}
-  public void maxSizeLimitReached(ConnectionPoolEvent evt) {}
-  public void maxSizeLimitError(ConnectionPoolEvent evt) {}
-  public void poolFlushed(ConnectionPoolEvent evt) {}
+  @Override
+  public void poolInitCompleted(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void poolCheckOut(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void poolCheckIn(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void validationError(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void maxPoolLimitReached(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void maxPoolLimitExceeded(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void maxSizeLimitReached(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void maxSizeLimitError(ConnectionPoolEvent evt)
+  {
+  }
+
+  @Override
+  public void poolFlushed(ConnectionPoolEvent evt)
+  {
+  }
+
 
   // Synchronizes parameters in case they are changed externally.
+  @Override
   public synchronized void poolParametersChanged(ConnectionPoolEvent evt)
   {
     synchronized(pool)
@@ -660,9 +761,21 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
     }
   }
 
+  @Override
   public synchronized void poolReleased(ConnectionPoolEvent evt)
   {
     pool.removeConnectionPoolListener(this);
     pool = null;
   }
+
+  //**********************************
+  // Interface methods from JDBC 4.1
+  //**********************************
+  // --- JDBC 4.1 ---
+  @Override
+  public java.util.logging.Logger getParentLogger() throws SQLFeatureNotSupportedException
+  {
+    throw new SQLFeatureNotSupportedException("DBPool uses SLF4J logging.");
+  }
+  // --- End JDBC 4.1 ---
 }

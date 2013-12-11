@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -37,7 +37,10 @@
  */
 package snaq.db;
 
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 
 /**
  * Abstract {@link ConnectionValidator} implementation that validates
@@ -45,7 +48,7 @@ import java.sql.*;
  *
  * <p>To create a simple ConnectionValidator implementation which validates
  * using a SQL query, extend this class and implement the abstract methods.</p>
- * 
+ *
  * <p>For example, the {@link #getQueryString()} method could be implemented to
  * return the string:</p>
  * <blockquote><blockquote>
@@ -56,10 +59,10 @@ import java.sql.*;
  * to be thrown then the validation automatically fails.
  * If the query completes successfully, the generated {@link ResultSet}
  * is then passed to the {@link #checkResults(ResultSet)} method.</p>
- * 
+ *
  * <p>This class is provided as a convenience for providing
  * connection validation.</p>
- * 
+ *
  * @author Giles Winstanley
  */
 public abstract class QueryValidator implements ConnectionValidator
@@ -68,34 +71,15 @@ public abstract class QueryValidator implements ConnectionValidator
    * Determines whether the specified connection is good to use.
    * @param con {@link Connection} instance to check for validity
    * @return true if the specified connection is good to use, false otherwise
+   * @throws SQLException
    */
+  @Override
   public final boolean isValid(Connection con) throws SQLException
   {
-    Statement st = null;
-    ResultSet res = null;
-    try
+    try(Statement st = con.createStatement();
+        ResultSet res = st.executeQuery(getQueryString()))
     {
-      st = con.createStatement();
-      res = st.executeQuery(getQueryString());
-      boolean ok = checkResults(res);
-      res.close();
-      res = null;
-      st.close();
-      st = null;
-      return ok;
-    }
-    finally
-    {
-      if (res != null)
-      {
-        try { res.close(); }
-        catch (SQLException sqlx) {}
-      }
-      if (st != null)
-      {
-        try { st.close(); }
-        catch (SQLException sqlx) {}
-      }
+      return checkResults(res);
     }
   }
 

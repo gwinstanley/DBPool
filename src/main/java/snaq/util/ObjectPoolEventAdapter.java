@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -41,20 +41,64 @@ package snaq.util;
  * Adapter implementation for handling {@link ObjectPoolEvent} instances for
  * an {@link ObjectPool}. It provides null implementations of all listener
  * methods so a sub-class can simply override the ones required.
- * 
+ *
  * @author Giles Winstanley
+ * @param <E> class type of referring ObjectPool
  */
-public class ObjectPoolEventAdapter implements ObjectPoolListener
+public class ObjectPoolEventAdapter<E extends Reusable> implements ObjectPoolListener<E>
 {
-  public void poolInitCompleted(ObjectPoolEvent evt) {}
-  public void poolCheckIn(ObjectPoolEvent evt) {}
-  public void poolCheckOut(ObjectPoolEvent evt) {}
-  public void validationError(ObjectPoolEvent evt) {}
-  public void maxPoolLimitReached(ObjectPoolEvent evt) {}
-  public void maxPoolLimitExceeded(ObjectPoolEvent evt) {}
-  public void maxSizeLimitReached(ObjectPoolEvent evt) {}
-  public void maxSizeLimitError(ObjectPoolEvent evt) {}
-  public void poolParametersChanged(ObjectPoolEvent evt) {}
-  public void poolFlushed(ObjectPoolEvent evt) {}
-  public void poolReleased(ObjectPoolEvent evt) {}
+  @Override
+  public void poolInitCompleted(ObjectPoolEvent<E> evt)
+  {
+  }
+
+  @Override
+  public void poolCheckIn(ObjectPoolEvent<E> evt)
+  {
+  }
+
+  @Override
+  public void poolCheckOut(ObjectPoolEvent<E> evt)
+  {
+  }
+
+  @Override
+  public void validationError(ObjectPoolEvent<E> evt)
+  {
+  }
+
+  @Override
+  public void maxPoolLimitReached(ObjectPoolEvent<E> evt)
+  {
+  }
+
+  @Override
+  public void maxPoolLimitExceeded(ObjectPoolEvent<E> evt)
+  {
+  }
+
+  @Override
+  public void maxSizeLimitReached(ObjectPoolEvent<E> evt)
+  {
+  }
+
+  @Override
+  public void maxSizeLimitError(ObjectPoolEvent<E> evt)
+  {
+  }
+
+  @Override
+  public void poolParametersChanged(ObjectPoolEvent<E> evt)
+  {
+  }
+
+  @Override
+  public void poolFlushed(ObjectPoolEvent<E> evt)
+  {
+  }
+
+  @Override
+  public void poolReleased(ObjectPoolEvent<E> evt)
+  {
+  }
 }

@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -37,7 +37,11 @@
  */
 package snaq.db;
 
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.SQLWarning;
+import java.sql.Statement;
 
 /**
  * {@link Statement} wrapper that provides methods for caching support.
@@ -53,9 +57,7 @@ public class CachedStatement implements Statement
   /** Delegate {@code Statement} instance. */
   protected Statement st;
   /** Flag indicating whether the connection is open. */
-  protected boolean open = true;
-  /** Flag indicating whether the connection is in the process of being closed. */
-  protected boolean closing = false;
+  private boolean open = true;
   /** Flag indicating a temporary &quot;checking&quot; status (used internally). */
   protected boolean checking = false;
   /** Flag indicating whether the statement can be cached. */
@@ -94,10 +96,13 @@ public class CachedStatement implements Statement
     return cacheable;
   }
 
-  /** Returns a string descriptions of the {@link ResultSet} parameters. */
+  /**
+   * Returns a string description of the {@link ResultSet} parameters.
+   * @return A string description of the {@link ResultSet} parameters
+   */
   protected String getParametersString()
   {
-    StringBuffer sb = new StringBuffer();
+    StringBuilder sb = new StringBuilder();
     try
     {
       switch(getResultSetType())
@@ -112,7 +117,10 @@ public class CachedStatement implements Statement
           sb.append("TYPE_FORWARD_ONLY");
       }
     }
-    catch (SQLException sqlx) { sb.append("TYPE_UNKNOWN"); }
+    catch (SQLException sqlx)
+    {
+      sb.append("TYPE_UNKNOWN");
+    }
     sb.append(',');
     try
     {
@@ -125,7 +133,10 @@ public class CachedStatement implements Statement
           sb.append("CONCUR_READ_ONLY");
       }
     }
-    catch (SQLException sqlx) { sb.append("CONCUR_UNKNOWN"); }
+    catch (SQLException sqlx)
+    {
+      sb.append("CONCUR_UNKNOWN");
+    }
     sb.append(',');
     try
     {
@@ -138,7 +149,10 @@ public class CachedStatement implements Statement
           sb.append("HOLD_CURSORS_OVER_COMMIT");
       }
     }
-    catch (SQLException sqlx) { sb.append("HOLD_UNKNOWN"); }
+    catch (SQLException sqlx)
+    {
+      sb.append("HOLD_UNKNOWN");
+    }
     return sb.toString();
   }
 
@@ -149,32 +163,42 @@ public class CachedStatement implements Statement
     if (rs != null)
       rs.close();
 
-    try { st.clearWarnings(); }
-    catch (SQLException sqlx) {}    // Caught to fix bug in some drivers.
+    try
+    {
+      st.clearWarnings();
+    }
+    catch (SQLException sqlx)  // Caught to fix bug in some drivers.
+    {
+    }
 
-    try { st.clearBatch(); }
-    catch (SQLException sqlx) {}    // Caught to fix bug in some drivers.
+    try
+    {
+      st.clearBatch();
+    }
+    catch (SQLException sqlx)  // Caught to fix bug in some drivers.
+    {
+    }
   }
 
   /**
    * Overridden to provide caching support.
    */
+  @Override
   public void close() throws SQLException
   {
     if (!open)
       return;
     open = false;
-    closing = true;
     // If listener registered, do callback, otherwise release statement.
     if (listener != null)
       listener.statementClosed(this);
     else
       release();
-    closing = false;
   }
 
   /**
    * Overridden to provide caching support.
+   * @throws SQLException
    */
   public void release() throws SQLException
   {
@@ -203,165 +227,219 @@ public class CachedStatement implements Statement
   // Interface methods from JDBC 2.0
   //**********************************
 
+  @Override
   public ResultSet executeQuery(String sql) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.executeQuery(sql);
   }
 
+  @Override
   public int executeUpdate(String sql) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.executeUpdate(sql);
   }
 
+  @Override
   public int getMaxFieldSize() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.getMaxFieldSize();
   }
 
+  @Override
   public void setMaxFieldSize(int max) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     st.setMaxFieldSize(max);
   }
 
+  @Override
   public int getMaxRows() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.getMaxRows();
   }
 
+  @Override
   public void setMaxRows(int max) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     st.setMaxRows(max);
   }
 
+  @Override
   public void setEscapeProcessing(boolean enable) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     st.setEscapeProcessing(enable);
   }
 
+  @Override
   public int getQueryTimeout() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.getQueryTimeout();
   }
 
+  @Override
   public void setQueryTimeout(int seconds) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     st.setQueryTimeout(seconds);
   }
 
+  @Override
   public void cancel() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     st.cancel();
   }
 
+  @Override
   public SQLWarning getWarnings() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.getWarnings();
   }
 
+  @Override
   public void clearWarnings() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     st.clearWarnings();
   }
 
+  @Override
   public void setCursorName(String name) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     st.setCursorName(name);
   }
 
+  @Override
   public boolean execute(String sql) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.execute(sql);
   }
 
+  @Override
   public ResultSet getResultSet() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.getResultSet();
   }
 
+  @Override
   public int getUpdateCount() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.getUpdateCount();
   }
 
+  @Override
   public boolean getMoreResults() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.getMoreResults();
   }
 
+  @Override
   public void setFetchDirection(int direction) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     st.setFetchDirection(direction);
   }
 
+  @Override
   public int getFetchDirection() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.getFetchDirection();
   }
 
+  @Override
   public void setFetchSize(int rows) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     st.setFetchSize(rows);
   }
 
+  @Override
   public int getFetchSize() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.getFetchSize();
   }
 
+  @Override
   public int getResultSetConcurrency() throws SQLException
   {
-    if (!open && !checking) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (!open && !checking)
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.getResultSetConcurrency();
   }
 
+  @Override
   public int getResultSetType() throws SQLException
   {
-    if (!open && !checking) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (!open && !checking)
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.getResultSetType();
   }
 
+  @Override
   public void addBatch(String sql) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     st.addBatch(sql);
   }
 
+  @Override
   public void clearBatch() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     st.clearBatch();
   }
 
+  @Override
   public int[] executeBatch() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.executeBatch();
   }
 
+  @Override
   public Connection getConnection() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.getConnection();
   }
 
@@ -369,57 +447,75 @@ public class CachedStatement implements Statement
   // Interface methods from JDBC 3.0
   //**********************************
 
+  @Override
   public boolean getMoreResults(int current) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.getMoreResults(current);
   }
 
+  @Override
   public ResultSet getGeneratedKeys() throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.getGeneratedKeys();
   }
 
+  @Override
   public int executeUpdate(String sql, int autoGeneratedKeys) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.executeUpdate(sql, autoGeneratedKeys);
   }
 
+  @Override
   public int executeUpdate(String sql, int[] columnIndexes) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.executeUpdate(sql, columnIndexes);
   }
 
+  @Override
   public int executeUpdate(String sql, String[] columnNames) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.executeUpdate(sql, columnNames);
   }
 
+  @Override
   public boolean execute(String sql, int autoGeneratedKeys) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.execute(sql, autoGeneratedKeys);
   }
 
+  @Override
   public boolean execute(String sql, int[] columnIndexes) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.execute(sql, columnIndexes);
   }
 
+  @Override
   public boolean execute(String sql, String[] columnNames) throws SQLException
   {
-    if (!open) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.execute(sql, columnNames);
   }
 
+  @Override
   public int getResultSetHoldability() throws SQLException
   {
-    if (!open && !checking) throw new SQLException(MSG_STATEMENT_CLOSED);
+    if (!open && !checking)
+      throw new SQLException(MSG_STATEMENT_CLOSED);
     return st.getResultSetHoldability();
   }
 
@@ -427,11 +523,13 @@ public class CachedStatement implements Statement
   // Interface methods from JDBC 4.0
   //**********************************
   // --- JDBC 4.0 ---
+  @Override
   public boolean isWrapperFor(Class<?> iface) throws SQLException
   {
     return iface.isInstance(st);
   }
 
+  @Override
   public <T> T unwrap(Class<T> iface) throws SQLException
   {
     try
@@ -443,12 +541,11 @@ public class CachedStatement implements Statement
     }
     catch (ClassCastException ccx)
     {
-      SQLException sqlx = new SQLException("Invalid type specified for unwrap operation: " + iface.getName());
-      sqlx.initCause(ccx);
-      throw sqlx;
+      throw new SQLException("Invalid type specified for unwrap operation: " + iface.getName(), ccx);
     }
   }
 
+  @Override
   public boolean isClosed() throws SQLException
   {
     return !open;
@@ -460,6 +557,7 @@ public class CachedStatement implements Statement
    * @param poolable flag indicating desired poolability
    * @throws SQLException if the request cannot be fulfilled
    */
+  @Override
   public void setPoolable(boolean poolable) throws SQLException
   {
     if (poolable && !cacheable)
@@ -471,9 +569,27 @@ public class CachedStatement implements Statement
    * Returns whether this statement is poolable.
    * @throws SQLException
    */
+  @Override
   public boolean isPoolable() throws SQLException
   {
     return isCacheable();
   }
   // --- End JDBC 4.0 ---
+
+  //**********************************
+  // Interface methods from JDBC 4.1
+  //**********************************
+  // --- JDBC 4.1 ---
+  @Override
+  public void closeOnCompletion() throws SQLException
+  {
+    st.closeOnCompletion();
+  }
+
+  @Override
+  public boolean isCloseOnCompletion() throws SQLException
+  {
+    return st.isCloseOnCompletion();
+  }
+  // --- End JDBC 4.1 ---
 }

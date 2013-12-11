@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -45,14 +45,6 @@ package snaq.db;
  */
 public class JDBCInfo
 {
-  /** Class name to test for JDBC4.0. */
-  private static final String JDBC40_CLASSNAME = "java.sql.RowId";
-  /** Class name to test for JDBC3.0. */
-  private static final String JDBC30_CLASSNAME = "java.sql.Savepoint";
-  /** Class name to test for JDBC2.1. */
-  private static final String JDBC21_CLASSNAME = "java.sql.Struct";
-  /** Class name to test for JDBC1.2. */
-  private static final String JDBC12_CLASSNAME = "java.sql.Driver";
   /** JDBC major version number. */
   private static int verMajor = 0;
   /** JDBC minor version number. */
@@ -109,44 +101,124 @@ public class JDBCInfo
    */
   private static synchronized void findVersion()
   {
-    try
+    if (testForJDBC42())
     {
-      Class.forName(JDBC40_CLASSNAME);
       verMajor = 4;
+      verMinor = 2;
     }
-    catch (ClassNotFoundException cnfx) {}
-    try
+    else if (testForJDBC41())
     {
-      if (verMajor == 0)
-      {
-        Class.forName(JDBC30_CLASSNAME);
-        verMajor = 3;
-      }
+      verMajor = 4;
+      verMinor = 1;
     }
-    catch (ClassNotFoundException cnfx) {}
-    try
+    else if (testForJDBC40())
     {
-      if (verMajor == 0)
-      {
-        Class.forName(JDBC21_CLASSNAME);
-        verMajor = 2;
-        verMinor = 1;
-      }
+      verMajor = 4;
+      verMinor = 0;
     }
-    catch (ClassNotFoundException cnfx) {}
-    try
+    else if (testForJDBC30())
     {
-      if (verMajor == 0)
-      {
-        Class.forName(JDBC12_CLASSNAME);
-        verMajor = 1;
-        verMinor = 2;
-      }
+      verMajor = 3;
+      verMinor = 0;
     }
-    catch (ClassNotFoundException cnfx) {}
-
-    // Create version string from number.
+    else if (testForJDBC21())
+    {
+      verMajor = 2;
+      verMinor = 1;
+    }
+    else if (testForJDBC12())
+    {
+      verMajor = 1;
+      verMinor = 2;
+    }
+    else
+    {
+      verMajor = 0;
+      verMinor = 0;
+      verString = "unknown";
+    }
     verString = verMajor + "." + verMinor;
+  }
+
+  private static boolean testForJDBC42()
+  {
+    try
+    {
+      Class.forName("java.sql.DriverAction");
+      Class.forName("java.sql.SQLType");
+      Class.forName("java.sql.JDBCType");
+      return true;
+    }
+    catch (ClassNotFoundException ex)
+    {
+      return false;
+    }
+  }
+
+  private static boolean testForJDBC41()
+  {
+    try
+    {
+      Class<?> k = Class.forName("java.sql.Connection");
+      k.getMethod("setSchema", String.class);
+      return true;
+    }
+    catch (ClassNotFoundException | NoSuchMethodException | SecurityException ex)
+    {
+      return false;
+    }
+  }
+
+  private static boolean testForJDBC40()
+  {
+    try
+    {
+      Class.forName("java.sql.RowId");
+      return true;
+    }
+    catch (ClassNotFoundException ex)
+    {
+      return false;
+    }
+  }
+
+  private static boolean testForJDBC30()
+  {
+    try
+    {
+      Class.forName("java.sql.Savepoint");
+      return true;
+    }
+    catch (ClassNotFoundException ex)
+    {
+      return false;
+    }
+  }
+
+  private static boolean testForJDBC21()
+  {
+    try
+    {
+      Class.forName("java.sql.Struct");
+      return true;
+    }
+    catch (ClassNotFoundException ex)
+    {
+      return false;
+    }
+  }
+
+  private static boolean testForJDBC12()
+  {
+    try
+    {
+      Class.forName("java.sql.Driver");
+      return true;
+    }
+    catch (ClassNotFoundException ex)
+    {
+      return false;
+    }
   }
 
   public static void main(String[] args)

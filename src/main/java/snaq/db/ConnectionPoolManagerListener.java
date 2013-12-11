@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -49,11 +49,13 @@ public interface ConnectionPoolManagerListener
   /**
    * Called when the internally-referenced {@code ConnectionPoolManager}
    * instances collection has changed.
+   * @param evt event instance
    */
   public void poolManagerInstancesChanged(ConnectionPoolManagerEvent evt);
 
   /**
    * Called when a {@code ConnectionPoolManager} is released.
+   * @param evt event instance
    */
   public void poolManagerReleased(ConnectionPoolManagerEvent evt);
 }

@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -50,48 +50,69 @@ public interface ConnectionPoolListener extends EventListener
 {
   /**
    * Called when the pool's {@link ConnectionPool#init(int)} method has completed.
+   * @param evt event instance
    */
   public void poolInitCompleted(ConnectionPoolEvent evt);
+
   /**
    * Called when a connection is checked out of the pool.
+   * @param evt event instance
    */
   public void poolCheckOut(ConnectionPoolEvent evt);
+
   /**
    * Called when a connection is checked back in to the pool.
+   * @param evt event instance
    */
   public void poolCheckIn(ConnectionPoolEvent evt);
+
   /**
    * Called when a connection is found to be invalid.
+   * @param evt event instance
    */
   public void validationError(ConnectionPoolEvent evt);
+
   /**
    * Called when a check-out request causes the maxPool limit to be reached.
+   * @param evt event instance
    */
   public void maxPoolLimitReached(ConnectionPoolEvent evt);
+
   /**
    * Called when a check-out request causes the maxPool limit to be exceeded.
+   * @param evt event instance
    */
   public void maxPoolLimitExceeded(ConnectionPoolEvent evt);
+
   /**
    * Called when a check-out request causes the maxSize limit to be reached.
    * (maxSize is equivalent to maxConn)
+   * @param evt event instance
    */
   public void maxSizeLimitReached(ConnectionPoolEvent evt);
+
   /**
    * Called when a check-out request attempts to exceed the maxSize limit.
    * (maxSize is equivalent to maxConn)
+   * @param evt event instance
    */
   public void maxSizeLimitError(ConnectionPoolEvent evt);
+
   /**
    * Called when the pool's parameters are changed.
+   * @param evt event instance
    */
   public void poolParametersChanged(ConnectionPoolEvent evt);
+
   /**
    * Called when the pool is flushed of free/unused connections.
+   * @param evt event instance
    */
   public void poolFlushed(ConnectionPoolEvent evt);
+  
   /**
    * Called when the pool is released (no more events are fired by the pool after this event).
+   * @param evt event instance
    */
   public void poolReleased(ConnectionPoolEvent evt);
 }

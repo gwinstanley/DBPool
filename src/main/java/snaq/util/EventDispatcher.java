@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -49,7 +49,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * Utility class to perform asynchronous event dispatch.
  * it provides a simple mechanism to allow dispatch of events using the
  * single method call {@link #dispatchEvent(EventObject)}, which schedules the event
- * to be propagated to the registered listeners in a seperate thread.
+ * to be propagated to the registered listeners in a separate thread.
  * The mechanism of actual event notification is specified using an
  * implementation of {@link EventNotifier}.
  * <p>The {@link EventListener} list provided on creation should ideally
@@ -59,6 +59,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * instance during the copy.</p>
  *
  * @author Giles Winstanley
+ * @param <L> class type of event listener
+ * @param <E> class type of event object
  */
 public class EventDispatcher<L extends EventListener, E extends EventObject> extends Thread
 {
@@ -67,7 +69,7 @@ public class EventDispatcher<L extends EventListener, E extends EventObject> ext
   /** Instance to use to publish events to listeners. */
   private final EventNotifier<L,E> notifier;
   /** Queue of events to dispatch. */
-  private final Queue<E> events = new ConcurrentLinkedQueue<E>();
+  private final Queue<E> events = new ConcurrentLinkedQueue<>();
   /** Flag determining whether the cleaner has been stopped. */
   private volatile boolean stopped = false;
 
@@ -96,6 +98,7 @@ public class EventDispatcher<L extends EventListener, E extends EventObject> ext
 
   /**
    * Schedules the specified event for listener notification.
+   * @param event event to dispatch
    */
   public void dispatchEvent(E event)
   {
@@ -134,7 +137,7 @@ public class EventDispatcher<L extends EventListener, E extends EventObject> ext
         if (safe)
           temp = listeners;
         else
-          synchronized(listeners) { temp = new ArrayList<L>(listeners); }
+          synchronized(listeners) { temp = new ArrayList<>(listeners); }
         // Iterate over listeners to notify them of event.
         for (L listener : temp)
         {

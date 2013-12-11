@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -38,13 +38,22 @@
 package snaq.db;
 
 import java.lang.management.ManagementFactory;
-import java.sql.*;
+import java.sql.CallableStatement;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
+import java.sql.SQLWarning;
+import java.sql.Statement;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CopyOnWriteArrayList;
+import javax.management.InstanceNotFoundException;
+import javax.management.MBeanRegistrationException;
 import javax.management.MBeanServer;
+import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
-import snaq.db.jmx.JmxUtils;
+import snaq.util.JmxUtils;
 import snaq.util.EventDispatcher;
 import snaq.util.EventNotifier;
 import snaq.util.ObjectPool;
@@ -53,7 +62,7 @@ import snaq.util.ObjectPoolListener;
 
 /**
  * Implementation of a database connection pool.
- * 
+ *
  * @see snaq.db.CacheConnection
  * @see snaq.db.CachedCallableStatement
  * @see snaq.db.CachedPreparedStatement
@@ -80,10 +89,10 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
   /** Flag determining whether {@link CallableStatement} instances are cached. */
   private boolean cacheCS;
   /** List to hold listeners for {@link ConnectionPoolEvent} events. */
-  private final List<ConnectionPoolListener> listeners = new CopyOnWriteArrayList<ConnectionPoolListener>();
+  private final List<ConnectionPoolListener> listeners = new CopyOnWriteArrayList<>();
   /** Event dispatcher thread instance to issue events in a thread-safe manner. */
   private EventDispatcher<ConnectionPoolListener,ConnectionPoolEvent> eventDispatcher;
-  /** Flag indicating whether to recyle connections after their raw/delegate connection has been used. */
+  /** Flag indicating whether to recycle connections after their raw/delegate connection has been used. */
   private boolean recycleAfterDelegateUse = false;
   /** Flag indicating whether this pool has had an MBean registered for it. */
   private boolean mbeanRegistered = false;
@@ -109,9 +118,7 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
     this.pass = password;
     this.props = null;
     setCaching(true);
-    addObjectPoolListener(new EventRelay());
-    // Setup event dispatch thread.
-    (eventDispatcher = new EventDispatcher<ConnectionPoolListener,ConnectionPoolEvent>(listeners, new Notifier())).start();
+    addObjectPoolListener(new EventRelay<>());
   }
 
   /**
@@ -205,7 +212,7 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
       mbs.unregisterMBean(name);
       mbeanRegistered = false;
     }
-    catch (Exception ex)
+    catch (MalformedObjectNameException | InstanceNotFoundException | MBeanRegistrationException ex)
     {
       log_warn("Unable to unregister pool from MBean server", ex);
     }
@@ -213,7 +220,10 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
 
   /**
    * Creates a new {@link Connection} object.
+   * @return A new CacheConnection instance
+   * @throws SQLException
    */
+  @Override
   protected CacheConnection create() throws SQLException
   {
     Connection con = null;
@@ -282,7 +292,10 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
 
   /**
    * Validates a {@link CacheConnection} object.
+   * @param cc connection to validate
+   * @return true if cc is valid, false otherwise
    */
+  @Override
   protected boolean isValid(final CacheConnection cc)
   {
     if (cc == null)
@@ -305,37 +318,46 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
   }
 
   /**
-   * Returns the maximum number of items that can be pooled.
-   * Moved from ObjectPool class to here, and maintained only for
-   * backwards-compatibility.
-   * @deprecated Use {@link #getMaxPool()} instead.
-   */
-  @Deprecated
-  public synchronized final int getPoolSize() { return getMaxPool(); }
-
-  /**
    * Sets the validator class for {@link Connection} instances.
+   * @param cv ConnectionValidator instance to use for this pool
    */
-  public void setValidator(ConnectionValidator cv) { validator = cv; }
+  public void setValidator(ConnectionValidator cv)
+  {
+    validator = cv;
+  }
 
   /**
    * Returns the current {@link ConnectionValidator} class.
+   * @return The current {@link ConnectionValidator} class
    */
-  public ConnectionValidator getValidator() { return validator; }
+  public ConnectionValidator getValidator()
+  {
+    return validator;
+  }
 
   /**
    * Sets the {@link PasswordDecoder} class.
+   * @param pd PasswordDecoder instance to use for this pool
    */
-  public void setPasswordDecoder(PasswordDecoder pd) { decoder = pd; }
+  public void setPasswordDecoder(PasswordDecoder pd)
+  {
+    decoder = pd;
+  }
 
   /**
    * Returns the current {@link PasswordDecoder} class.
+   * @return The current {@link PasswordDecoder} class
    */
-  public PasswordDecoder getPasswordDecoder() { return decoder; }
+  public PasswordDecoder getPasswordDecoder()
+  {
+    return decoder;
+  }
 
   /**
    * Closes the specified {@link CacheConnection} object.
+   * @param cc connection to destroy
    */
+  @Override
   protected void destroy(final CacheConnection cc)
   {
     if (cc == null)
@@ -424,6 +446,8 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
    * Returns a {@link Connection} to the pool (for internal use only).
    * Connections obtained from the pool should be returned by calling
    * {@link Connection#close()}.
+   * @param c connection to free back to the pool
+   * @throws SQLException
    */
   protected void freeConnection(Connection c) throws SQLException
   {
@@ -431,6 +455,13 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
       log_warn("Attempt to return invalid item");
     else
       super.checkIn((CacheConnection)c);
+  }
+
+  @Override
+  protected void preRelease()
+  {
+    if (mbeanRegistered)
+      unregisterMBean();
   }
 
   @Override
@@ -448,13 +479,17 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
   }
 
   @Override
-  protected float getIdleTimeoutMultiplier() { return 1000f; }
+  protected float getIdleTimeoutMultiplier()
+  {
+    return 1000f;
+  }
 
   /**
    * Determines whether to perform statement caching.
    * This applies to all types of statements (normal, prepared, callable).
+   * @param b Whether to perform statement caching
    */
-  public void setCaching(boolean b)
+  public final void setCaching(boolean b)
   {
     cacheSS = cachePS = cacheCS = b;
   }
@@ -474,6 +509,7 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
 
   /**
    * Returns whether the pool caches {@code Statement} instances for each connection.
+   * @return true if pool is caching Statement instances, false otherwise
    */
   public boolean isCachingStatements()
   {
@@ -482,6 +518,7 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
 
   /**
    * Returns whether the pool caches {@code PreparedStatement} instances for each connection.
+   * @return true if pool is caching PreparedStatement instances, false otherwise
    */
   public boolean isCachingPreparedStatements()
   {
@@ -490,26 +527,12 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
 
   /**
    * Returns whether the pool caches {@code CallableStatement} instances for each connection.
+   * @return true if pool is caching CallableStatement instances, false otherwise
    */
   public boolean isCachingCallableStatements()
   {
     return cacheCS;
   }
-
-  /**
-   * Sets the pool access method to FIFO (first-in, first-out: a queue).
-   */
-  protected final void setPoolAccessFIFO() { super.setAccessFIFO(); }
-
-  /**
-   * Sets the pool access method to LIFO (last-in, first-out: a stack).
-   */
-  protected final void setPoolAccessLIFO() { super.setAccessLIFO(); }
-
-  /**
-   * Sets the pool access method to random (a random connection is selected for check-out).
-   */
-  protected final void setPoolAccessRandom() { super.setAccessRandom(); }
 
   /**
    * Sets whether the connection may be recycled if the underlying
@@ -522,6 +545,7 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
    * are not compromised in any way, and the {@link CacheConnection#close()}
    * method is called on each {@code CacheConnection} instance and NOT the
    * raw connection.
+   * @param b whether connections are recycled after use of underlying delegate connection
    */
   public final void setRecycleAfterDelegateUse(boolean b)
   {
@@ -531,6 +555,7 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
   /**
    * Returns whether connections may be recycled if the underlying
    * raw/delegate connection has been used.
+   * @return true if connections are recycled after delegate connection use, false otherwise
    */
   public boolean isRecycleAfterDelegateUse()
   {
@@ -540,16 +565,26 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
   /**
    * Specifies the minimum time interval between cleaning attempts of
    * the {@code Cleaner} thread.
+   * @return The minimum time interval between cleaning attempts of
+   * the {@code Cleaner} thread
    */
   @Override
-  protected long getMinimumCleaningInterval() { return 1000L; }
+  protected long getMinimumCleaningInterval()
+  {
+    return 1000L;
+  }
 
   /**
    * Specifies the maximum time interval between cleaning attempts of
    * the {@code Cleaner} thread.
+   * @return The maximum time interval between cleaning attempts of
+   * the {@code Cleaner} thread
    */
   @Override
-  protected long getMaximumCleaningInterval() { return 5000L; }
+  protected long getMaximumCleaningInterval()
+  {
+    return 5000L;
+  }
 
   //************************
   // Event-handling methods
@@ -557,6 +592,7 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
 
   /**
    * Adds a {@link ConnectionPoolListener} to the event notification list.
+   * @param listener listener to add
    */
   public final void addConnectionPoolListener(ConnectionPoolListener listener)
   {
@@ -565,6 +601,7 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
 
   /**
    * Removes a {@link ConnectionPoolListener} from the event notification list.
+   * @param listener listener to remove
    */
   public final void removeConnectionPoolListener(ConnectionPoolListener listener)
   {
@@ -575,11 +612,18 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
    * Fires an ConnectionPoolEvent to all listeners.
    * 'type' should be one of ConnectionPoolEvent types.
    */
-  private final void firePoolEvent(int type)
+  private void firePoolEvent(int type)
   {
     if (listeners.isEmpty())
       return;
     ConnectionPoolEvent poolEvent = new ConnectionPoolEvent(this, type);
+    // Setup event dispatch thread if necessary.
+    if (eventDispatcher == null)
+    {
+      eventDispatcher = new EventDispatcher<>(listeners, new Notifier());
+      eventDispatcher.start();
+    }
+    // Dispatch event.
     eventDispatcher.dispatchEvent(poolEvent);
   }
 
@@ -589,7 +633,7 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
    * all listeners receive the event before the event-dispatch thread is
    * shutdown.
    */
-  private final void firePoolReleasedEvent()
+  private void firePoolReleasedEvent()
   {
     if (listeners.isEmpty())
       return;
@@ -618,13 +662,17 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
     /**
      * Validates a {@link Connection}.
      */
+    @Override
     public boolean isValid(Connection con)
     {
       try
       {
         return (con instanceof CacheConnection) ? true : !con.isClosed();
       }
-      catch (SQLException sqlx) { return false; }
+      catch (SQLException sqlx)
+      {
+        return false;
+      }
     }
   }
 
@@ -633,19 +681,74 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
    * Class to relay {@link ObjectPoolEvent} instances as
    * {@link ConnectionPoolEvent} instances.
    */
-  private final class EventRelay implements ObjectPoolListener
+  private final class EventRelay<T extends CacheConnection> implements ObjectPoolListener<T>
   {
-    public void poolInitCompleted(ObjectPoolEvent evt) { firePoolEvent(ConnectionPoolEvent.INIT_COMPLETED); }
-    public void poolCheckOut(ObjectPoolEvent evt) { firePoolEvent(ConnectionPoolEvent.CHECKOUT); }
-    public void poolCheckIn(ObjectPoolEvent evt) { firePoolEvent(ConnectionPoolEvent.CHECKIN); }
-    public void validationError(ObjectPoolEvent evt) { firePoolEvent(ConnectionPoolEvent.VALIDATION_ERROR); }
-    public void maxPoolLimitReached(ObjectPoolEvent evt) { firePoolEvent(ConnectionPoolEvent.MAX_POOL_LIMIT_REACHED); }
-    public void maxPoolLimitExceeded(ObjectPoolEvent evt) { firePoolEvent(ConnectionPoolEvent.MAX_POOL_LIMIT_EXCEEDED); }
-    public void maxSizeLimitReached(ObjectPoolEvent evt) { firePoolEvent(ConnectionPoolEvent.MAX_SIZE_LIMIT_REACHED); }
-    public void maxSizeLimitError(ObjectPoolEvent evt) { firePoolEvent(ConnectionPoolEvent.MAX_SIZE_LIMIT_ERROR); }
-    public void poolParametersChanged(ObjectPoolEvent evt) { firePoolEvent(ConnectionPoolEvent.PARAMETERS_CHANGED); }
-    public void poolFlushed(ObjectPoolEvent evt) { firePoolEvent(ConnectionPoolEvent.POOL_FLUSHED); }
-    public void poolReleased(ObjectPoolEvent evt) { firePoolReleasedEvent(); listeners.clear(); }
+    @Override
+    public void poolInitCompleted(ObjectPoolEvent<T> evt)
+    {
+      firePoolEvent(ConnectionPoolEvent.INIT_COMPLETED);
+    }
+
+    @Override
+    public void poolCheckOut(ObjectPoolEvent<T> evt)
+    {
+      firePoolEvent(ConnectionPoolEvent.CHECKOUT);
+    }
+
+    @Override
+    public void poolCheckIn(ObjectPoolEvent<T> evt)
+    {
+      firePoolEvent(ConnectionPoolEvent.CHECKIN);
+    }
+
+    @Override
+    public void validationError(ObjectPoolEvent<T> evt)
+    {
+      firePoolEvent(ConnectionPoolEvent.VALIDATION_ERROR);
+    }
+
+    @Override
+    public void maxPoolLimitReached(ObjectPoolEvent<T> evt)
+    {
+      firePoolEvent(ConnectionPoolEvent.MAX_POOL_LIMIT_REACHED);
+    }
+
+    @Override
+    public void maxPoolLimitExceeded(ObjectPoolEvent<T> evt)
+    {
+      firePoolEvent(ConnectionPoolEvent.MAX_POOL_LIMIT_EXCEEDED);
+    }
+
+    @Override
+    public void maxSizeLimitReached(ObjectPoolEvent<T> evt)
+    {
+      firePoolEvent(ConnectionPoolEvent.MAX_SIZE_LIMIT_REACHED);
+    }
+
+    @Override
+    public void maxSizeLimitError(ObjectPoolEvent<T> evt)
+    {
+      firePoolEvent(ConnectionPoolEvent.MAX_SIZE_LIMIT_ERROR);
+    }
+
+    @Override
+    public void poolParametersChanged(ObjectPoolEvent<T> evt)
+    {
+      firePoolEvent(ConnectionPoolEvent.PARAMETERS_CHANGED);
+    }
+
+    @Override
+    public void poolFlushed(ObjectPoolEvent<T> evt)
+    {
+      firePoolEvent(ConnectionPoolEvent.POOL_FLUSHED);
+    }
+
+    @Override
+    public void poolReleased(ObjectPoolEvent<T> evt)
+    {
+      firePoolReleasedEvent();
+      listeners.clear();
+    }
   }
 
   /**
@@ -653,6 +756,7 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
    */
   private final class Notifier implements EventNotifier<ConnectionPoolListener, ConnectionPoolEvent>
   {
+    @Override
     public void notifyListener(ConnectionPoolListener cpl, ConnectionPoolEvent evt)
     {
       try

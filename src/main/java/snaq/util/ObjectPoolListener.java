@@ -3,7 +3,7 @@
   DBPool : Java Database Connection Pooling <http://www.snaq.net/>
   Copyright (c) 2001-2013 Giles Winstanley. All Rights Reserved.
 
-  This is file is part of the DBPool project, which is licenced under
+  This is file is part of the DBPool project, which is licensed under
   the BSD-style licence terms shown below.
   ---------------------------------------------------------------------------
   Redistribution and use in source and binary forms, with or without
@@ -43,53 +43,75 @@ import java.util.EventListener;
  * Listener interface for {@link ObjectPoolEvent} objects.
  * Listeners should ensure the implementations of the listed methods return
  * quickly. Tasks that require more time should spawn a new thread.
- * 
+ *
  * @author Giles Winstanley
+ * @param <E> class type of referring ObjectPool
  */
-public interface ObjectPoolListener extends EventListener
+public interface ObjectPoolListener<E extends Reusable> extends EventListener
 {
   /**
    * Called when the pool's {@link ObjectPool#init(int)} method has completed.
+   * @param evt event instance
    */
-  public void poolInitCompleted(ObjectPoolEvent evt);
+  public void poolInitCompleted(ObjectPoolEvent<E> evt);
+
   /**
    * Called when an item is checked out of the pool.
+   * @param evt event instance
    */
-  public void poolCheckOut(ObjectPoolEvent evt);
+  public void poolCheckOut(ObjectPoolEvent<E> evt);
+
   /**
    * Called when an item is checked back in to the pool.
+   * @param evt event instance
    */
-  public void poolCheckIn(ObjectPoolEvent evt);
+  public void poolCheckIn(ObjectPoolEvent<E> evt);
+
   /**
    * Called when an item is found to be invalid.
+   * @param evt event instance
    */
-  public void validationError(ObjectPoolEvent evt);
+  public void validationError(ObjectPoolEvent<E> evt);
+
   /**
    * Called when a check-out request causes the poolSize limit to be reached.
+   * @param evt event instance
    */
-  public void maxPoolLimitReached(ObjectPoolEvent evt);
+  public void maxPoolLimitReached(ObjectPoolEvent<E> evt);
+
   /**
    * Called when a check-out request causes the poolSize limit to be exceeded.
+   * @param evt event instance
    */
-  public void maxPoolLimitExceeded(ObjectPoolEvent evt);
+  public void maxPoolLimitExceeded(ObjectPoolEvent<E> evt);
+
   /**
    * Called when a check-out request causes the maxSize limit to be reached.
+   * @param evt event instance
    */
-  public void maxSizeLimitReached(ObjectPoolEvent evt);
+  public void maxSizeLimitReached(ObjectPoolEvent<E> evt);
+
   /**
    * Called when a check-out request attempts to exceed the maxSize limit.
+   * @param evt event instance
    */
-  public void maxSizeLimitError(ObjectPoolEvent evt);
+  public void maxSizeLimitError(ObjectPoolEvent<E> evt);
+
   /**
    * Called when the pool's parameters are changed.
+   * @param evt event instance
    */
-  public void poolParametersChanged(ObjectPoolEvent evt);
+  public void poolParametersChanged(ObjectPoolEvent<E> evt);
+
   /**
    * Called when the pool is flushed of all free/unused items.
+   * @param evt event instance
    */
-  public void poolFlushed(ObjectPoolEvent evt);
+  public void poolFlushed(ObjectPoolEvent<E> evt);
+  
   /**
    * Called when the pool is released (no more events are fired by the pool after this event).
+   * @param evt event instance
    */
-  public void poolReleased(ObjectPoolEvent evt);
+  public void poolReleased(ObjectPoolEvent<E> evt);
 }
