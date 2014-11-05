@@ -190,7 +190,7 @@ public class DBPoolDataSourceFactory implements ObjectFactory
         {
           throw new NamingException("Invalid '" + refName + "' value: " + refValue);
         }
-        logger.trace("Set DataSource minSize: " + refValue);
+        logger.trace("Set DataSource maxSize: " + refValue);
       }
       else if (refName.equalsIgnoreCase("idleTimeout"))
       {
@@ -214,11 +214,12 @@ public class DBPoolDataSourceFactory implements ObjectFactory
         {
           throw new NamingException("Invalid '" + refName + "' value: " + refValue);
         }
-        logger.trace("Set DataSource idleTimeout: " + refValue);
+        logger.trace("Set DataSource loginTimeout: " + refValue);
       }
       else
       {
-        logger.debug("Unknown reference '" + refName + "' with value: " + refValue);
+        ds.setConnectionProperty(refName, refValue);
+        logger.trace(String.format("Set DataSource property: %s=%s", refName, refValue));
       }
     }
 
