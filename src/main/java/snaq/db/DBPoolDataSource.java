@@ -43,6 +43,8 @@ import java.sql.Driver;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
+import java.util.Objects;
+import java.util.Properties;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -72,10 +74,6 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   // -------------------------------
   /** Description of this DataSource. */
   private String description;
-  /** Username for accessing the database. */
-  private String user;
-  /** Password for accessing the database. */
-  private String password;
   // -----------------------------
   // Custom DataSource properties.
   // -----------------------------
@@ -103,6 +101,8 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   private int idleTimeout = 0;
   /** Timeout in seconds for database connection attempts. */
   private int loginTimeout = 3;
+  /** Properties to send to driver. */
+  private Properties props = new Properties();
   /** Flag determining whether a pool shutdown-hook is registered. */
   private boolean shutdownHook = false;
 
@@ -188,7 +188,8 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
     }
     // Create connection pool.
     String poolName = POOL_NAME_PREFIX + name;
-    pool = new ConnectionPool(poolName, getMinPool(), getMaxPool(), getMaxSize(), getIdleTimeout(), getUrl(), getUser(), getPassword());
+
+    pool = new ConnectionPool(poolName, getMinPool(), getMaxPool(), getMaxSize(), getIdleTimeout(), getUrl(), props);
     pool.addConnectionPoolListener(this);
     if (getLogWriter() != null)
       pool.setLog(getLogWriter());
@@ -307,7 +308,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
    */
   public synchronized String getUser()
   {
-    return this.user;
+    return props.getProperty("user");
   }
 
   /**
@@ -318,7 +319,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   {
     if (pool != null)
       throw new IllegalStateException("Cannot call this method after DBPoolDataSource has been initialized");
-    this.user = username;
+    props.setProperty("user", username);
   }
 
   /**
@@ -327,7 +328,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
    */
   public synchronized String getPassword()
   {
-    return this.password;
+    return props.getProperty("password");
   }
 
   /**
@@ -338,7 +339,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   {
     if (pool != null)
       throw new IllegalStateException("Cannot call this method after DBPoolDataSource has been initialized");
-    this.password = password;
+    props.setProperty("password", password);
   }
 
   /**
@@ -548,6 +549,32 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
     this.idleTimeout = idleTimeout;
     if (pool != null)
       pool.setParameters(pool.getMinPool(), pool.getMaxPool(), pool.getMaxSize(), this.idleTimeout * 1000L);
+  }
+
+  /**
+   * Returns the driver property for the specified key.
+   * @param key property key
+   * @return the driver property for the specified key
+   */
+  public synchronized String getConnectionProperty(String key)
+  {
+    Objects.requireNonNull(key);
+    return props.getProperty(key);
+  }
+
+  /**
+   * Sets the driver property for the specified key.
+   * @param key property key
+   * @param value value of property
+   */
+  public synchronized void setConnectionProperty(String key, String value)
+  {
+    Objects.requireNonNull(key);
+    if (pool != null)
+      throw new IllegalStateException("Cannot call this method after DBPoolDataSource has been initialized");
+    if (value == null)
+      props.remove(key);
+    props.put(key, value);
   }
 
   /**
