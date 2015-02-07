@@ -50,6 +50,7 @@ import java.sql.NClob;
 import java.sql.Ref;
 import java.sql.RowId;
 import java.sql.SQLException;
+import java.sql.SQLType;
 import java.sql.SQLXML;
 import java.sql.Time;
 import java.sql.Timestamp;
@@ -76,7 +77,7 @@ public final class CachedCallableStatement extends CachedPreparedStatement imple
 
   /**
    * Overridden to provide caching support.
-   * @throws SQLException
+   * @throws SQLException if thrown while attempting to release statement
    */
   @Override
   public void release() throws SQLException
@@ -1007,4 +1008,73 @@ public final class CachedCallableStatement extends CachedPreparedStatement imple
     return ((CallableStatement)st).getObject(parameterName, type);
   }
   // --- End JDBC 4.1 ---
+
+  //**********************************
+  // Interface methods from JDBC 4.2
+  //**********************************
+  // --- JDBC 4.2 ---
+  @Override
+  public void registerOutParameter(String parameterName, SQLType sqlType, String typeName) throws SQLException
+  {
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
+    ((CallableStatement)st).registerOutParameter(parameterName, sqlType, typeName);
+  }
+
+  @Override
+  public void registerOutParameter(String parameterName, SQLType sqlType, int scale) throws SQLException
+  {
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
+    ((CallableStatement)st).registerOutParameter(parameterName, sqlType, scale);
+  }
+
+  @Override
+  public void registerOutParameter(String parameterName, SQLType sqlType) throws SQLException
+  {
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
+    ((CallableStatement)st).registerOutParameter(parameterName, sqlType);
+  }
+
+  @Override
+  public void registerOutParameter(int parameterIndex, SQLType sqlType, String typeName) throws SQLException
+  {
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
+    ((CallableStatement)st).registerOutParameter(parameterIndex, sqlType, typeName);
+  }
+
+  @Override
+  public void registerOutParameter(int parameterIndex, SQLType sqlType, int scale) throws SQLException
+  {
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
+    ((CallableStatement)st).registerOutParameter(parameterIndex, sqlType, scale);
+  }
+
+  @Override
+  public void registerOutParameter(int parameterIndex, SQLType sqlType) throws SQLException
+  {
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
+    ((CallableStatement)st).registerOutParameter(parameterIndex, sqlType);
+  }
+
+  @Override
+  public void setObject(String parameterName, Object x, SQLType targetSqlType) throws SQLException
+  {
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
+    ((CallableStatement)st).setObject(parameterName, x, targetSqlType);
+  }
+
+  @Override
+  public void setObject(String parameterName, Object x, SQLType targetSqlType, int scaleOrLength) throws SQLException
+  {
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
+    ((CallableStatement)st).setObject(parameterName, x, targetSqlType, scaleOrLength);
+  }
+  // --- End JDBC 4.2 ---
 }

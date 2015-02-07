@@ -53,6 +53,7 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.RowId;
 import java.sql.SQLException;
+import java.sql.SQLType;
 import java.sql.SQLXML;
 import java.sql.Time;
 import java.sql.Timestamp;
@@ -84,8 +85,7 @@ public class CachedPreparedStatement extends CachedStatement implements Prepared
     return sql;
   }
 
-  @Override
-  public String toString()
+  String toTemplateString()
   {
     StringBuilder sb = new StringBuilder();
     sb.append(super.toString());
@@ -99,7 +99,7 @@ public class CachedPreparedStatement extends CachedStatement implements Prepared
 
   /**
    * Overridden to add PreparedStatement specific code.
-   * @throws SQLException
+   * @throws SQLException if thrown while attempting to recycle statement
    */
   @Override
   public void recycle() throws SQLException
@@ -122,7 +122,7 @@ public class CachedPreparedStatement extends CachedStatement implements Prepared
 
   /**
    * Overridden to provide caching support.
-   * @throws SQLException
+   * @throws SQLException if thrown while attempting to release statement
    */
   @Override
   public void release() throws SQLException
@@ -584,4 +584,33 @@ public class CachedPreparedStatement extends CachedStatement implements Prepared
     ((PreparedStatement)st).setNClob(parameterIndex, reader);
   }
   // --- End JDBC 4.0 ---
+
+  //**********************************
+  // Interface methods from JDBC 4.2
+  //**********************************
+  // --- JDBC 4.2 ---
+  @Override
+  public long executeLargeUpdate() throws SQLException
+  {
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
+    return ((PreparedStatement)st).executeLargeUpdate();
+  }
+
+  @Override
+  public void setObject(int parameterIndex, Object x, SQLType targetSqlType) throws SQLException
+  {
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
+    ((PreparedStatement)st).setObject(parameterIndex, x, targetSqlType);
+  }
+
+  @Override
+  public void setObject(int parameterIndex, Object x, SQLType targetSqlType, int scaleOrLength) throws SQLException
+  {
+    if (isClosed())
+      throw new SQLException(MSG_STATEMENT_CLOSED);
+    ((PreparedStatement)st).setObject(parameterIndex, x, targetSqlType, scaleOrLength);
+  }
+  // --- End JDBC 4.2 ---
 }

@@ -53,65 +53,65 @@ public interface ObjectPoolListener<E extends Reusable> extends EventListener
    * Called when the pool's {@link ObjectPool#init(int)} method has completed.
    * @param evt event instance
    */
-  public void poolInitCompleted(ObjectPoolEvent<E> evt);
+  void poolInitCompleted(ObjectPoolEvent<E> evt);
 
   /**
    * Called when an item is checked out of the pool.
    * @param evt event instance
    */
-  public void poolCheckOut(ObjectPoolEvent<E> evt);
+  void poolCheckOut(ObjectPoolEvent<E> evt);
 
   /**
    * Called when an item is checked back in to the pool.
    * @param evt event instance
    */
-  public void poolCheckIn(ObjectPoolEvent<E> evt);
+  void poolCheckIn(ObjectPoolEvent<E> evt);
 
   /**
    * Called when an item is found to be invalid.
    * @param evt event instance
    */
-  public void validationError(ObjectPoolEvent<E> evt);
+  void validationError(ObjectPoolEvent<E> evt);
 
   /**
    * Called when a check-out request causes the poolSize limit to be reached.
    * @param evt event instance
    */
-  public void maxPoolLimitReached(ObjectPoolEvent<E> evt);
+  void maxPoolLimitReached(ObjectPoolEvent<E> evt);
 
   /**
    * Called when a check-out request causes the poolSize limit to be exceeded.
    * @param evt event instance
    */
-  public void maxPoolLimitExceeded(ObjectPoolEvent<E> evt);
+  void maxPoolLimitExceeded(ObjectPoolEvent<E> evt);
 
   /**
    * Called when a check-out request causes the maxSize limit to be reached.
    * @param evt event instance
    */
-  public void maxSizeLimitReached(ObjectPoolEvent<E> evt);
+  void maxSizeLimitReached(ObjectPoolEvent<E> evt);
 
   /**
    * Called when a check-out request attempts to exceed the maxSize limit.
    * @param evt event instance
    */
-  public void maxSizeLimitError(ObjectPoolEvent<E> evt);
+  void maxSizeLimitError(ObjectPoolEvent<E> evt);
 
   /**
    * Called when the pool's parameters are changed.
    * @param evt event instance
    */
-  public void poolParametersChanged(ObjectPoolEvent<E> evt);
+  void poolParametersChanged(ObjectPoolEvent<E> evt);
 
   /**
    * Called when the pool is flushed of all free/unused items.
    * @param evt event instance
    */
-  public void poolFlushed(ObjectPoolEvent<E> evt);
+  void poolFlushed(ObjectPoolEvent<E> evt);
   
   /**
    * Called when the pool is released (no more events are fired by the pool after this event).
    * @param evt event instance
    */
-  public void poolReleased(ObjectPoolEvent<E> evt);
+  void poolReleased(ObjectPoolEvent<E> evt);
 }

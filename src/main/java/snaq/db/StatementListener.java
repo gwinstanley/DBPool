@@ -49,6 +49,8 @@ interface StatementListener
 {
   /**
    * Invoked when a {@link CachedStatement} closes.
+   * @param s statement that was just closed
+   * @throws SQLException if thrown during method execution
    */
   void statementClosed(CachedStatement s) throws SQLException;
 }

@@ -64,7 +64,7 @@ public class JmxUtils
    * @param <T> object type of pool for MBean
    * @param pool pool for which to create MBean
    * @return A {@code ModelMBean} for the specified {@link ObjectPool}
-   * @throws Exception
+   * @throws Exception if thrown while trying to create MBean
    */
   public static <T extends Reusable> ModelMBean createObjectPoolMBean(ObjectPool<T> pool) throws Exception
   {

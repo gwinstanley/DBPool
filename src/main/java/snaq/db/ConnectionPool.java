@@ -221,7 +221,7 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
   /**
    * Creates a new {@link Connection} object.
    * @return A new CacheConnection instance
-   * @throws SQLException
+   * @throws SQLException if thrown while attempting to create connection
    */
   @Override
   protected CacheConnection create() throws SQLException
@@ -307,7 +307,7 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
     {
       boolean valid = validator.isValid(cc.getRawConnection());
       if (!valid)
-        firePoolEvent(ConnectionPoolEvent.VALIDATION_ERROR);
+        firePoolEvent(ConnectionPoolEvent.Type.VALIDATION_ERROR);
       return valid;
     }
     catch (SQLException sqlx)
@@ -447,7 +447,7 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
    * Connections obtained from the pool should be returned by calling
    * {@link Connection#close()}.
    * @param c connection to free back to the pool
-   * @throws SQLException
+   * @throws SQLException if thrown while attempting to free connection
    */
   protected void freeConnection(Connection c) throws SQLException
   {
@@ -612,7 +612,7 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
    * Fires an ConnectionPoolEvent to all listeners.
    * 'type' should be one of ConnectionPoolEvent types.
    */
-  private void firePoolEvent(int type)
+  private void firePoolEvent(ConnectionPoolEvent.Type type)
   {
     if (listeners.isEmpty())
       return;
@@ -637,7 +637,7 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
   {
     if (listeners.isEmpty())
       return;
-    ConnectionPoolEvent poolEvent = new ConnectionPoolEvent(this, ConnectionPoolEvent.POOL_RELEASED);
+    ConnectionPoolEvent poolEvent = new ConnectionPoolEvent(this, ConnectionPoolEvent.Type.POOL_RELEASED);
     // No copy of listeners needs to be taken as the collection is thread-safe.
     for (ConnectionPoolListener listener : listeners)
     {
@@ -686,61 +686,61 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
     @Override
     public void poolInitCompleted(ObjectPoolEvent<T> evt)
     {
-      firePoolEvent(ConnectionPoolEvent.INIT_COMPLETED);
+      firePoolEvent(ConnectionPoolEvent.Type.INIT_COMPLETED);
     }
 
     @Override
     public void poolCheckOut(ObjectPoolEvent<T> evt)
     {
-      firePoolEvent(ConnectionPoolEvent.CHECKOUT);
+      firePoolEvent(ConnectionPoolEvent.Type.CHECKOUT);
     }
 
     @Override
     public void poolCheckIn(ObjectPoolEvent<T> evt)
     {
-      firePoolEvent(ConnectionPoolEvent.CHECKIN);
+      firePoolEvent(ConnectionPoolEvent.Type.CHECKIN);
     }
 
     @Override
     public void validationError(ObjectPoolEvent<T> evt)
     {
-      firePoolEvent(ConnectionPoolEvent.VALIDATION_ERROR);
+      firePoolEvent(ConnectionPoolEvent.Type.VALIDATION_ERROR);
     }
 
     @Override
     public void maxPoolLimitReached(ObjectPoolEvent<T> evt)
     {
-      firePoolEvent(ConnectionPoolEvent.MAX_POOL_LIMIT_REACHED);
+      firePoolEvent(ConnectionPoolEvent.Type.MAX_POOL_LIMIT_REACHED);
     }
 
     @Override
     public void maxPoolLimitExceeded(ObjectPoolEvent<T> evt)
     {
-      firePoolEvent(ConnectionPoolEvent.MAX_POOL_LIMIT_EXCEEDED);
+      firePoolEvent(ConnectionPoolEvent.Type.MAX_POOL_LIMIT_EXCEEDED);
     }
 
     @Override
     public void maxSizeLimitReached(ObjectPoolEvent<T> evt)
     {
-      firePoolEvent(ConnectionPoolEvent.MAX_SIZE_LIMIT_REACHED);
+      firePoolEvent(ConnectionPoolEvent.Type.MAX_SIZE_LIMIT_REACHED);
     }
 
     @Override
     public void maxSizeLimitError(ObjectPoolEvent<T> evt)
     {
-      firePoolEvent(ConnectionPoolEvent.MAX_SIZE_LIMIT_ERROR);
+      firePoolEvent(ConnectionPoolEvent.Type.MAX_SIZE_LIMIT_ERROR);
     }
 
     @Override
     public void poolParametersChanged(ObjectPoolEvent<T> evt)
     {
-      firePoolEvent(ConnectionPoolEvent.PARAMETERS_CHANGED);
+      firePoolEvent(ConnectionPoolEvent.Type.PARAMETERS_CHANGED);
     }
 
     @Override
     public void poolFlushed(ObjectPoolEvent<T> evt)
     {
-      firePoolEvent(ConnectionPoolEvent.POOL_FLUSHED);
+      firePoolEvent(ConnectionPoolEvent.Type.POOL_FLUSHED);
     }
 
     @Override
@@ -763,37 +763,37 @@ public class ConnectionPool extends ObjectPool<CacheConnection>
       {
         switch (evt.getType())
         {
-          case ConnectionPoolEvent.INIT_COMPLETED:
+          case INIT_COMPLETED:
             cpl.poolInitCompleted(evt);
             break;
-          case ConnectionPoolEvent.CHECKOUT:
+          case CHECKOUT:
             cpl.poolCheckOut(evt);
             break;
-          case ConnectionPoolEvent.CHECKIN:
+          case CHECKIN:
             cpl.poolCheckIn(evt);
             break;
-          case ConnectionPoolEvent.VALIDATION_ERROR:
+          case VALIDATION_ERROR:
             cpl.validationError(evt);
             break;
-          case ConnectionPoolEvent.MAX_POOL_LIMIT_REACHED:
+          case MAX_POOL_LIMIT_REACHED:
             cpl.maxPoolLimitReached(evt);
             break;
-          case ConnectionPoolEvent.MAX_POOL_LIMIT_EXCEEDED:
+          case MAX_POOL_LIMIT_EXCEEDED:
             cpl.maxPoolLimitExceeded(evt);
             break;
-          case ConnectionPoolEvent.MAX_SIZE_LIMIT_REACHED:
+          case MAX_SIZE_LIMIT_REACHED:
             cpl.maxSizeLimitReached(evt);
             break;
-          case ConnectionPoolEvent.MAX_SIZE_LIMIT_ERROR:
+          case MAX_SIZE_LIMIT_ERROR:
             cpl.maxSizeLimitError(evt);
             break;
-          case ConnectionPoolEvent.PARAMETERS_CHANGED:
+          case PARAMETERS_CHANGED:
             cpl.poolParametersChanged(evt);
             break;
-          case ConnectionPoolEvent.POOL_FLUSHED:
+          case POOL_FLUSHED:
             cpl.poolFlushed(evt);
             break;
-          case ConnectionPoolEvent.POOL_RELEASED:
+          case POOL_RELEASED:
             cpl.poolReleased(evt);
             break;
           default:

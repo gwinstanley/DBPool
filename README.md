@@ -13,7 +13,7 @@ DBPool is available under a BSD-style licence, which can be viewed in the LICENS
 
 ## What are the requirements/dependencies?
 
-* **Requirements:** DBPool 6.0 requires Java Platform 7 (also known as Java 1.7.x) or above, with support for JDBC 4.1 features. If rebuilding from the source code, [Apache Maven](http://maven.apache.org/) is recommended as a build tool.
+* **Requirements:** DBPool 7.0 requires Java Platform 8 (also known as Java 1.8.x) or above, with support for JDBC 4.2 features. With minor source modifications it can also support Java Platform 7 (Java 1.7.x). If rebuilding from the source code, [Apache Maven](http://maven.apache.org/) is recommended as a build tool.
 * **Dependencies:** [SLF4J](http://www.slf4j.org/)
 
 ## Where can I find more detailed information?

@@ -71,7 +71,7 @@ public abstract class QueryValidator implements ConnectionValidator
    * Determines whether the specified connection is good to use.
    * @param con {@link Connection} instance to check for validity
    * @return true if the specified connection is good to use, false otherwise
-   * @throws SQLException
+   * @throws SQLException if the connection is invalid
    */
   @Override
   public final boolean isValid(Connection con) throws SQLException

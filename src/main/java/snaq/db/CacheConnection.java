@@ -310,7 +310,10 @@ public final class CacheConnection implements Connection, StatementListener, Reu
     return pool;
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   */
   protected void log_warn(String s)
   {
     logger.warn(s);
@@ -318,7 +321,11 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       logUtil.log(s);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   * @param throwable {@code Throwable} instance to log
+   */
   protected void log_warn(String s, Throwable throwable)
   {
     logger.warn(s, throwable);
@@ -326,7 +333,10 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       logUtil.log(s, throwable);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   */
   protected void log_debug(String s)
   {
     logger.debug(s);
@@ -334,7 +344,11 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       logUtil.debug(s);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   * @param throwable {@code Throwable} instance to log
+   */
   protected void log_debug(String s, Throwable throwable)
   {
     logger.debug(s, throwable);
@@ -587,7 +601,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
    * Callback invoked when a {@link CachedStatement} is closed.
    * This method should only be called by {@link CachedStatement} instances.
    * @param s CachedStatement on which close() method was called
-   * @throws SQLException
+   * @throws SQLException if thrown while attempting to close statement
    */
   @Override
   public void statementClosed(CachedStatement s) throws SQLException
@@ -746,7 +760,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   /**
    * Puts the connection back in a state where it can be reused.
    * This method should only be called by {@link ConnectionPool} instances.
-   * @throws SQLException
+   * @throws SQLException if thrown while attempting to recycle
    */
   @Override
   public void recycle() throws SQLException
@@ -757,7 +771,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       int count = (ssUsed != null) ? ssUsed.size() : 0;
       if (count > 0)
       {
-        log_debug(pool.getName() + ": Cleaning " + count + " cached Statement" + (count > 1 ? "s" : ""));
+        log_debug(pool.getName() + ": Cleaning " + count + " cached Statement" + (count != 1 ? "s" : ""));
         synchronized(ssUsed)
         {
           while (!ssUsed.isEmpty())
@@ -777,7 +791,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       int count = (psUsed != null) ? psUsed.size() : 0;
       if (count > 0)
       {
-        log_debug(pool.getName() + ": Cleaning " + count + " cached PreparedStatement" + (count > 1 ? "s" : ""));
+        log_debug(pool.getName() + ": Cleaning " + count + " cached PreparedStatement" + (count != 1 ? "s" : ""));
         synchronized(psUsed)
         {
           while (!psUsed.isEmpty())
@@ -797,7 +811,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       int count = (csUsed != null) ? csUsed.size() : 0;
       if (count > 0)
       {
-        log_debug(pool.getName() + ": Cleaning " + count + " cached CallableStatement" + (count > 1 ? "s" : ""));
+        log_debug(pool.getName() + ": Cleaning " + count + " cached CallableStatement" + (count != 1 ? "s" : ""));
         synchronized(csUsed)
         {
           while (!csUsed.isEmpty())
@@ -960,7 +974,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Flushes the spare {@link Statement} caches for this connection.
-   * @throws SQLException
+   * @throws SQLException if thrown while attempting to flush statements
    */
   protected void flushSpareStatements() throws SQLException
   {
@@ -969,7 +983,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       int count = ss.size();
       if (count > 0)
       {
-        log_debug(pool.getName() + ": Closing " + count + " cached Statement" + (count > 1 ? "s" : ""));
+        log_debug(pool.getName() + ": Closing " + count + " cached Statement" + (count != 1 ? "s" : ""));
         while (!ss.isEmpty())
           (ss.remove(0)).release();
       }
@@ -978,7 +992,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Flushes the open {@link Statement} cache for this connection.
-   * @throws SQLException
+   * @throws SQLException if thrown while attempting to flush statements
    */
   protected void flushOpenStatements() throws SQLException
   {
@@ -987,7 +1001,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       int count = ssUsed.size();
       if (count > 0)
       {
-        log_debug(pool.getName() + ": Closing " + count + " open Statement" + (count > 1 ? "s" : ""));
+        log_debug(pool.getName() + ": Closing " + count + " open Statement" + (count != 1 ? "s" : ""));
         while (!ssUsed.isEmpty())
           (ssUsed.remove(0)).release();
       }
@@ -996,7 +1010,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Flushes the spare {@link PreparedStatement} cache for this connection.
-   * @throws SQLException
+   * @throws SQLException if thrown while attempting to flush statements
    */
   protected void flushSparePreparedStatements() throws SQLException
   {
@@ -1005,7 +1019,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       int count = ps.size();
       if (count > 0)
       {
-        log_debug(pool.getName() + ": Closing " + count + " cached PreparedStatement" + (count > 1 ? "s" : ""));
+        log_debug(pool.getName() + ": Closing " + count + " cached PreparedStatement" + (count != 1 ? "s" : ""));
         for (List<CachedPreparedStatement> list : ps.values())
         {
           for (CachedPreparedStatement cps : list)
@@ -1018,7 +1032,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Flushes the open {@link PreparedStatement} cache for this connection.
-   * @throws SQLException
+   * @throws SQLException if thrown while attempting to flush statements
    */
   protected void flushOpenPreparedStatements() throws SQLException
   {
@@ -1027,7 +1041,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       int count = psUsed.size();
       if (count > 0)
       {
-        log_debug(pool.getName() + ": Closing " + count + " open PreparedStatement" + (count > 1 ? "s" : ""));
+        log_debug(pool.getName() + ": Closing " + count + " open PreparedStatement" + (count != 1 ? "s" : ""));
         while (!psUsed.isEmpty())
           (psUsed.remove(0)).release();
       }
@@ -1036,7 +1050,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Flushes the spare {@link CallableStatement} cache for this connection.
-   * @throws SQLException
+   * @throws SQLException if thrown while attempting to flush statements
    */
   protected void flushSpareCallableStatements() throws SQLException
   {
@@ -1045,7 +1059,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       int count = cs.size();
       if (count > 0)
       {
-        log_debug(pool.getName() + ": Closing " + count + " cached CallableStatement" + (count > 1 ? "s" : ""));
+        log_debug(pool.getName() + ": Closing " + count + " cached CallableStatement" + (count != 1 ? "s" : ""));
         for (List<CachedCallableStatement> list : cs.values())
         {
           for (CachedCallableStatement ccs : list)
@@ -1058,7 +1072,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Flushes the open {@link CallableStatement} cache for this connection.
-   * @throws SQLException
+   * @throws SQLException if thrown while attempting to flush statements
    */
   protected void flushOpenCallableStatements() throws SQLException
   {
@@ -1067,7 +1081,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       int count = csUsed.size();
       if (count > 0)
       {
-        log_debug(pool.getName() + ": Closing " + count + " open CallableStatement" + (count > 1 ? "s" : ""));
+        log_debug(pool.getName() + ": Closing " + count + " open CallableStatement" + (count != 1 ? "s" : ""));
         while (!csUsed.isEmpty())
           (csUsed.remove(0)).release();
       }
@@ -1076,7 +1090,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
 
   /**
    * Flushes the non-cacheable {@link Statement} instances for this connection.
-   * @throws SQLException
+   * @throws SQLException if thrown while attempting to flush statements
    */
   protected void flushOpenNonCacheableStatements() throws SQLException
   {
@@ -1085,7 +1099,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
       int count = nonCacheable.size();
       if (count > 0)
       {
-        log_debug(pool.getName() + ": Closing " + count + " open non-cacheable Statement" + (count > 1 ? "s" : ""));
+        log_debug(pool.getName() + ": Closing " + count + " open non-cacheable Statement" + (count != 1 ? "s" : ""));
         while (!nonCacheable.isEmpty())
         {
           try
@@ -1104,7 +1118,7 @@ public final class CacheConnection implements Connection, StatementListener, Reu
   /**
    * Destroys the wrapped {@link Connection} instance.
    * This method should only be called by {@link ConnectionPool} instances.
-   * @throws SQLException
+   * @throws SQLException if thrown while attempting to release statement
    */
   public void release() throws SQLException
   {

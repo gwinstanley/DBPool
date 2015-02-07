@@ -149,7 +149,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   /**
    * Writes a message with a {@code Throwable} to the log file.
    * @param message message to write
-   * @param throwable
+   * @param throwable {@code Throwable} instance to log
    */
   protected synchronized void log(String message, Throwable throwable)
   {
@@ -164,7 +164,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
 
   /**
    * Creates a new {@code DBPoolDataSource} instance.
-   * @throws java.sql.SQLException if required resources cannot be located/established
+   * @throws SQLException if required resources cannot be located/established
    */
   protected synchronized void createConnectionPool() throws SQLException
   {
@@ -187,7 +187,7 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
       }
     }
     // Create connection pool.
-    String poolName = POOL_NAME_PREFIX + name;
+    String poolName = POOL_NAME_PREFIX + getName();
 
     pool = new ConnectionPool(poolName, getMinPool(), getMaxPool(), getMaxSize(), getIdleTimeout(), getUrl(), props);
     pool.addConnectionPoolListener(this);
@@ -274,14 +274,14 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
   }
 
   /**
-   * Releases (cleans up resources of) the internal {@code ConnectionPool}
-   * instance. This method should be called to close all the pooled connections.
+   * Synonym for {@link #releaseImmediately()} retained for backward
+   * compatibility; will be removed.
+   * @deprecated Use {@link #releaseImmediately()} instead
    */
+  @Deprecated
   public synchronized void releaseConnectionPool()
   {
-    if (pool != null)
-      pool.releaseForcibly();
-    pool = null;
+    releaseImmediately();
   }
 
   /**
@@ -659,7 +659,22 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
    */
   public void release()
   {
-    pool.release();
+    if (pool != null)
+      pool.release();
+  }
+
+  /**
+   * Releases the delegate {@link ConnectionPool} instance allowing the
+   * specified timeout before forcibly destroying connections.
+   * A negative timeout is equivalent to no timeout, and the method will wait
+   * for items to be checked in before destruction. If timeout &gt;= 0 then
+   * items will be forcibly destroyed after the specified time has elapsed.
+   * @param timeout timeout after which to forcibly destroy items (-1 for no timeout)
+   */
+  public void release(long timeout)
+  {
+    if (pool != null)
+      pool.release(timeout);
   }
 
   /**
@@ -667,15 +682,39 @@ public class DBPoolDataSource implements DataSource, ConnectionPoolListener
    */
   public void releaseAsync()
   {
-    pool.releaseAsync();
+    if (pool != null)
+      pool.releaseAsync();
   }
 
   /**
-   * Forcibly releases the delegate {@link ConnectionPool} instance.
+   * Asynchronously releases the delegate {@link ConnectionPool} instance.
+   * @param timeout timeout after which to forcibly destroy items (-1 for no timeout)
    */
+  public void releaseAsync(long timeout)
+  {
+    if (pool != null)
+      pool.releaseAsync(timeout);
+  }
+
+  /**
+   * Synonym for {@link #releaseImmediately()} retained for backward
+   * compatibility; will be removed.
+   * @deprecated Use {@link #releaseImmediately()} instead
+   */
+  @Deprecated
   public void releaseForcibly()
   {
-    pool.releaseForcibly();
+    if (pool != null)
+      pool.releaseForcibly();
+  }
+
+  /**
+   * Immediately releases the delegate {@link ConnectionPool} instance.
+   */
+  public void releaseImmediately()
+  {
+    if (pool != null)
+      pool.releaseImmediately();
   }
 
   @Override

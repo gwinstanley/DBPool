@@ -50,20 +50,22 @@ import java.util.EventObject;
  */
 public class ObjectPoolEvent<T extends Reusable> extends EventObject
 {
-  public static final int INIT_COMPLETED = 1;
-  public static final int CHECKOUT = 2;
-  public static final int CHECKIN = 3;
-  public static final int VALIDATION_ERROR = 4;
-  public static final int MAX_POOL_LIMIT_REACHED = 5;
-  public static final int MAX_POOL_LIMIT_EXCEEDED = 6;
-  public static final int MAX_SIZE_LIMIT_REACHED = 7;
-  public static final int MAX_SIZE_LIMIT_ERROR = 8;
-  public static final int PARAMETERS_CHANGED = 9;
-  public static final int POOL_FLUSHED = 10;
-  public static final int POOL_RELEASED = 11;
-
+  /** Enumeration of event types. */
+  public static enum Type {
+    INIT_COMPLETED,
+    CHECKOUT,
+    CHECKIN,
+    VALIDATION_ERROR,
+    MAX_POOL_LIMIT_REACHED,
+    MAX_POOL_LIMIT_EXCEEDED,
+    MAX_SIZE_LIMIT_REACHED,
+    MAX_SIZE_LIMIT_ERROR,
+    PARAMETERS_CHANGED,
+    POOL_FLUSHED,
+    POOL_RELEASED
+  };
   /** Event type of this instance. */
-  private final int type;
+  private final Type type;
 
   // Shadow variables to hold copies at time of event dispatch.
   private int minPool;
@@ -80,7 +82,7 @@ public class ObjectPoolEvent<T extends Reusable> extends EventObject
    * @param pool ObjectPool for which to create event
    * @param type type of event to create
    */
-  public ObjectPoolEvent(ObjectPool<T> pool, int type)
+  public ObjectPoolEvent(ObjectPool<T> pool, Type type)
   {
     super(pool);
     this.type = type;
@@ -100,7 +102,7 @@ public class ObjectPoolEvent<T extends Reusable> extends EventObject
    * Returns the type of event this object represents.
    * @return The type of event this object represents
    */
-  public int getType()
+  public Type getType()
   {
     return type;
   }
@@ -111,21 +113,7 @@ public class ObjectPoolEvent<T extends Reusable> extends EventObject
    */
   public String getTypeString()
   {
-    switch(type)
-    {
-      case INIT_COMPLETED: return "INIT_COMPLETED";
-      case CHECKOUT: return "CHECKOUT";
-      case CHECKIN: return "CHECKIN";
-      case VALIDATION_ERROR: return "VALIDATION_ERROR";
-      case MAX_POOL_LIMIT_REACHED: return "MAX_POOL_LIMIT_REACHED";
-      case MAX_POOL_LIMIT_EXCEEDED: return "MAX_POOL_LIMIT_EXCEEDED";
-      case MAX_SIZE_LIMIT_REACHED: return "MAX_SIZE_LIMIT_REACHED";
-      case MAX_SIZE_LIMIT_ERROR: return "MAX_SIZE_LIMIT_ERROR";
-      case PARAMETERS_CHANGED: return "PARAMETERS_CHANGED";
-      case POOL_FLUSHED: return "POOL_FLUSHED";
-      case POOL_RELEASED: return "POOL_RELEASED";
-      default: return "UNKNOWN";
-    }
+    return type.toString();
   }
 
   @Override
@@ -141,17 +129,17 @@ public class ObjectPoolEvent<T extends Reusable> extends EventObject
     return sb.toString();
   }
 
-  public boolean isPoolInitCompleted() { return type == INIT_COMPLETED; }
-  public boolean isPoolCheckOut() { return type == CHECKOUT; }
-  public boolean isPoolCheckIn() { return type == CHECKIN; }
-  public boolean isValidationError() { return type == VALIDATION_ERROR; }
-  public boolean isMaxPoolLimitReached() { return type == MAX_POOL_LIMIT_REACHED; }
-  public boolean isMaxPoolLimitExceeded() { return type == MAX_POOL_LIMIT_EXCEEDED; }
-  public boolean isMaxSizeLimitReached() { return type == MAX_SIZE_LIMIT_REACHED; }
-  public boolean isMaxSizeLimitError() { return type == MAX_SIZE_LIMIT_ERROR; }
-  public boolean isPoolParametersChanged() { return type == PARAMETERS_CHANGED; }
-  public boolean isPoolFlushed() { return type == POOL_FLUSHED; }
-  public boolean isPoolReleased() { return type == POOL_RELEASED; }
+  public boolean isPoolInitCompleted() { return type == Type.INIT_COMPLETED; }
+  public boolean isPoolCheckOut() { return type == Type.CHECKOUT; }
+  public boolean isPoolCheckIn() { return type == Type.CHECKIN; }
+  public boolean isValidationError() { return type == Type.VALIDATION_ERROR; }
+  public boolean isMaxPoolLimitReached() { return type == Type.MAX_POOL_LIMIT_REACHED; }
+  public boolean isMaxPoolLimitExceeded() { return type == Type.MAX_POOL_LIMIT_EXCEEDED; }
+  public boolean isMaxSizeLimitReached() { return type == Type.MAX_SIZE_LIMIT_REACHED; }
+  public boolean isMaxSizeLimitError() { return type == Type.MAX_SIZE_LIMIT_ERROR; }
+  public boolean isPoolParametersChanged() { return type == Type.PARAMETERS_CHANGED; }
+  public boolean isPoolFlushed() { return type == Type.POOL_FLUSHED; }
+  public boolean isPoolReleased() { return type == Type.POOL_RELEASED; }
 
   void setMinPool(int i) { this.minPool = i; }
   void setMaxPool(int i) { this.maxPool = i; }

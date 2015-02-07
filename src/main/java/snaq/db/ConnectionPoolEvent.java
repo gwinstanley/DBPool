@@ -48,7 +48,7 @@ import snaq.util.ObjectPoolEvent;
 public class ConnectionPoolEvent extends ObjectPoolEvent<CacheConnection>
 {
   @SuppressWarnings("unchecked")
-  protected ConnectionPoolEvent(ObjectPool<CacheConnection> pool, int type)
+  protected ConnectionPoolEvent(ObjectPool<CacheConnection> pool, ObjectPoolEvent.Type type)
   {
     super(pool, type);
   }

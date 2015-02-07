@@ -91,7 +91,7 @@ import snaq.util.logging.LogUtil;
  * useful in circumstances where destruction of items held can take a long
  * time which would delay the {@code checkIn} method. This also applies
  * to the release of the pool after its final use, which should always be
- * done using either {@code release} or {@code releaseAsync}.</p>
+ * done using one of the {@code release...} methods.</p>
  *
  * @param <T> the type of reusable objects held in this pool
  * @author Giles Winstanley
@@ -195,7 +195,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
 
   /**
    * Registers a shutdown hook for this ConnectionPoolManager instance
-   * to ensure it is released if the JVM exits
+   * to ensure it is released if the JVM exits.
    */
   public synchronized void registerShutdownHook()
   {
@@ -346,7 +346,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       {
         destroyObject(o);
         log_info("Removed invalid item from pool");
-        firePoolEvent(ObjectPoolEvent.VALIDATION_ERROR);
+        firePoolEvent(ObjectPoolEvent.Type.VALIDATION_ERROR);
         switch(selection)
         {
           case SELECT_FIFO:
@@ -371,13 +371,13 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
     if (o == null)
     {
       if (maxSize > 0 && used.size() == maxSize)
-        firePoolEvent(ObjectPoolEvent.MAX_SIZE_LIMIT_ERROR);
+        firePoolEvent(ObjectPoolEvent.Type.MAX_SIZE_LIMIT_ERROR);
       else if (maxSize == 0 || used.size() < maxSize)
       {
         o = create();
         if (!isValid(o))
         {
-          firePoolEvent(ObjectPoolEvent.VALIDATION_ERROR);
+          firePoolEvent(ObjectPoolEvent.Type.VALIDATION_ERROR);
           throw new RuntimeException("Unable to create a valid item");
         }
       }
@@ -390,16 +390,16 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       requests++;
       if (hit)
         hits++;
-      firePoolEvent(ObjectPoolEvent.CHECKOUT);
+      firePoolEvent(ObjectPoolEvent.Type.CHECKOUT);
       // Check for limit reaching so events can be fired.
       // (Events only fired on increase of pool numbers).
       int postTotal = used.size() + free.size();
       if (postTotal == maxPool && postTotal > preTotal)
-        firePoolEvent(ObjectPoolEvent.MAX_POOL_LIMIT_REACHED);
+        firePoolEvent(ObjectPoolEvent.Type.MAX_POOL_LIMIT_REACHED);
       else if (postTotal == maxPool + 1 && postTotal > preTotal)
-        firePoolEvent(ObjectPoolEvent.MAX_POOL_LIMIT_EXCEEDED);
+        firePoolEvent(ObjectPoolEvent.Type.MAX_POOL_LIMIT_EXCEEDED);
       if (postTotal == maxSize && postTotal > preTotal)
-        firePoolEvent(ObjectPoolEvent.MAX_SIZE_LIMIT_REACHED);
+        firePoolEvent(ObjectPoolEvent.Type.MAX_SIZE_LIMIT_REACHED);
     }
     if (log.isDebugEnabled())
     {
@@ -458,7 +458,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
 
     synchronized(this)
     {
-      firePoolEvent(ObjectPoolEvent.CHECKIN);
+      firePoolEvent(ObjectPoolEvent.Type.CHECKIN);
 
       // Check if item is from this pool.
       if (!used.remove(o))
@@ -507,7 +507,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    */
   public final void release()
   {
-    release(false);
+    release(-1);
   }
 
   /**
@@ -520,32 +520,71 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
   }
 
   /**
-   * Releases all items from the pool, and shuts the pool down.
-   * This method returns immediately; a background thread is created to perform the release.
-   */
-  public final synchronized void releaseAsync()
-  {
-    releaseAsync(false);
-  }
-
-  /**
    * Forcibly releases all items from the pool, and shuts the pool down.
    * If any items are still checked-out, this method forcibly destroys them
    * and then returns.
+   * This method is being deprecated due to API change allowing forcible timeout
+   * release via the {@link #release(long)} method. The equivalent behaviour
+   * can be achieved using {@link #releaseImmediately()}.
+   * @deprecated Use {@link #releaseImmediately()} instead
    */
+  @Deprecated
   public final void releaseForcibly()
   {
-    release(true);
+    releaseImmediately();
+  }
+
+  /**
+   * Immediately releases all items from the pool, and shuts the pool down.
+   * If any items are still checked-out, this method forcibly destroys them
+   * and then returns.
+   */
+  public final void releaseImmediately()
+  {
+    release(0);
   }
 
   /**
    * Releases all items from the pool, and shuts the pool down.
-   * @param forced whether to forcibly destroy items, or let them be checked-in
+   * This method returns immediately; a background thread is created to perform the release.
    */
-  private void release(boolean forced)
+  public final void releaseAsync()
+  {
+    releaseAsync(-1);
+  }
+
+  /**
+   * Releases all items from the pool, and shuts the pool down.
+   * This method returns immediately; a background thread is created to perform the release.
+   */
+  public final void releaseAsync(final long timeout)
+  {
+    Thread t = new Thread(new Runnable()
+    {
+      @Override
+      public void run()
+      {
+        release(timeout);
+      }
+    });
+    t.start();
+  }
+
+  /**
+   * Releases all items from the pool, and shuts the pool down, allowing
+   * {@code timeout} milliseconds for the connections to be gracefully returned
+   * to the pool before they are forcibly destroyed.
+   * A negative timeout is equivalent to no timeout, and the method will wait
+   * for items to be checked in before destruction. If timeout &gt;= 0 then
+   * items will be forcibly destroyed after the specified time has elapsed.
+   * @param timeout timeout after which to forcibly destroy items (-1 for no timeout)
+   */
+  public final void release(long timeout)
   {
     if (released)
       return;
+    long startTime = System.currentTimeMillis();
+    boolean hasTimeout = (timeout >= 0);
     // Set released flag to prevent check-out of new items.
     released = true;
     // Allow sub-class to clean up.
@@ -585,7 +624,23 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       free.clear();
 
       // Destroy all items still in use.
-      if (forced)
+      if (log.isDebugEnabled() && !used.isEmpty())
+        log_debug("Waiting for used items to be checked-in...");
+      long dif = System.currentTimeMillis() - startTime;
+      while (!used.isEmpty() && hasTimeout && dif < timeout)
+      {
+        try
+        {
+          wait(timeout - dif);
+        }
+        catch (InterruptedException ix)
+        {
+          log_warn(ix.getMessage(), ix);
+        }
+        dif = System.currentTimeMillis() - startTime;
+      }
+      // If timeout expired, forcibly destroy items.
+      if (!used.isEmpty() && hasTimeout && dif > timeout)
       {
         for (T o : used)
         {
@@ -602,29 +657,13 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
         }
         used.clear();
       }
-      else
-      {
-        if (log.isDebugEnabled() && used.size() > 0)
-          log_debug("Waiting for used items to be checked-in...");
-        while (used.size() > 0)
-        {
-          try
-          {
-            wait();
-          }
-          catch (InterruptedException ix)
-          {
-            log_warn(ix.getMessage(), ix);
-          }
-        }
-      }
 
       // Destroy log reference.
       if (log.isDebugEnabled())
       {
-        String s = "Released " + releasedCount + (releasedCount > 1 ? " items" : " item");
+        String s = "Released " + releasedCount + (releasedCount != 1 ? " items" : " item");
         if (failedCount > 0)
-          s += " (failed to release " + failedCount + (failedCount > 1 ? " items)" : " item)");
+          s += " (failed to release " + failedCount + (failedCount != 1 ? " items)" : " item)");
         log_debug(s);
       }
     }
@@ -640,19 +679,26 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
 
       // Destroy event dispatch thread.
       listeners.clear();
-      if (eventDispatcher != null)
-        eventDispatcher.halt();
-      if (!forced)
+      try
       {
-        try
+        if (eventDispatcher != null)
         {
-          if (eventDispatcher != null)
+          eventDispatcher.halt();
+          if (hasTimeout)
+          {
+            long wait = startTime + timeout - System.currentTimeMillis();
+            if (wait > 0)
+              eventDispatcher.join(wait);
+            else
+              eventDispatcher.join();
+          }
+          else
             eventDispatcher.join();
         }
-        catch (InterruptedException ix)
-        {
-          log_warn("Interrupted during halting of event dispatch thread", ix);
-        }
+      }
+      catch (InterruptedException ix)
+      {
+        log_warn("Interrupted during halting of event dispatch thread", ix);
       }
       eventDispatcher = null;
     }
@@ -679,23 +725,6 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    */
   protected void postRelease()
   {
-  }
-
-  /**
-   * Releases all items from the pool, and shuts the pool down.
-   * This method returns immediately; a background thread is created to perform the release.
-   */
-  private void releaseAsync(final boolean forced)
-  {
-    Thread t = new Thread(new Runnable()
-    {
-      @Override
-      public void run()
-      {
-        release(forced);
-      }
-    });
-    t.start();
   }
 
   /**
@@ -796,7 +825,10 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
     return logUtil;
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   */
   protected void log_error(String s)
   {
     String msg = name + ": " + s;
@@ -805,7 +837,11 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       logUtil.log(msg);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   * @param throwable {@code Throwable} instance to log
+   */
   protected void log_error(String s, Throwable throwable)
   {
     String msg = name + ": " + s;
@@ -814,7 +850,10 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       logUtil.log(msg, throwable);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   */
   protected void log_warn(String s)
   {
     String msg = name + ": " + s;
@@ -823,7 +862,11 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       logUtil.log(msg);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   * @param throwable {@code Throwable} instance to log
+   */
   protected void log_warn(String s, Throwable throwable)
   {
     String msg = name + ": " + s;
@@ -832,7 +875,10 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       logUtil.log(msg, throwable);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   */
   protected void log_info(String s)
   {
     String msg = name + ": " + s;
@@ -841,7 +887,11 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       logUtil.log(msg);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   * @param throwable {@code Throwable} instance to log
+   */
   protected void log_info(String s, Throwable throwable)
   {
     String msg = name + ": " + s;
@@ -850,7 +900,10 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       logUtil.log(msg, throwable);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   */
   protected void log_debug(String s)
   {
     String msg = name + ": " + s;
@@ -859,7 +912,11 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       logUtil.debug(msg);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   * @param throwable {@code Throwable} instance to log
+   */
   protected void log_debug(String s, Throwable throwable)
   {
     String msg = name + ": " + s;
@@ -868,13 +925,20 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       logUtil.debug(msg, throwable);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   */
   protected void log_trace(String s)
   {
     log.trace(name + ": " + s);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   * @param throwable {@code Throwable} instance to log
+   */
   protected void log_trace(String s, Throwable throwable)
   {
     log.trace(name + ": " + s, throwable);
@@ -1055,7 +1119,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       }
       log_debug("Parameters changed (" + sb.toString() + ")");
     }
-    firePoolEvent(ObjectPoolEvent.PARAMETERS_CHANGED);
+    firePoolEvent(ObjectPoolEvent.Type.PARAMETERS_CHANGED);
   }
 
   /**
@@ -1181,7 +1245,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       if (count > 0)
         log_debug("Flushed all spare items from pool");
       // Notify event listeners.
-      firePoolEvent(ObjectPoolEvent.POOL_FLUSHED);
+      firePoolEvent(ObjectPoolEvent.Type.POOL_FLUSHED);
       // Create new pooled items as required.
       if (idleTimeout == 0 && minPool > 0)
         init();
@@ -1309,7 +1373,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
    * Fires an ObjectPoolEvent to all listeners.
    * 'type' should be one of ObjectPoolEvent types.
    */
-  private void firePoolEvent(int type)
+  private void firePoolEvent(ObjectPoolEvent.Type type)
   {
     if (listeners.isEmpty())
       return;
@@ -1349,7 +1413,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
     ObjectPoolEvent<T> poolEvent = null;
     synchronized (this)
     {
-      poolEvent = new ObjectPoolEvent<>(this, ObjectPoolEvent.POOL_RELEASED);
+      poolEvent = new ObjectPoolEvent<>(this, ObjectPoolEvent.Type.POOL_RELEASED);
       poolEvent.setMinPool(getMinPool());
       poolEvent.setMaxPool(getMaxPool());
       poolEvent.setMaxSize(getMaxSize());
@@ -1533,7 +1597,7 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
               T o = create();
               if (!isValid(o))
               {
-                firePoolEvent(ObjectPoolEvent.VALIDATION_ERROR);
+                firePoolEvent(ObjectPoolEvent.Type.VALIDATION_ERROR);
                 throw new RuntimeException("Unable to create a valid item");
               }
               else
@@ -1556,8 +1620,8 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       {
         if (!stopped && done)
         {
-          log_debug("Initialized pool with " + count + (count > 1 ? " new items" : " new item"));
-          firePoolEvent(ObjectPoolEvent.INIT_COMPLETED);
+          log_debug("Initialized pool with " + count + (count != 1 ? " new items" : " new item"));
+          firePoolEvent(ObjectPoolEvent.Type.INIT_COMPLETED);
         }
         if (pool.initer != Thread.currentThread())
           pool.initer = null;
@@ -1598,37 +1662,37 @@ public abstract class ObjectPool<T extends Reusable> implements Comparable<Objec
       {
         switch (evt.getType())
         {
-          case ObjectPoolEvent.INIT_COMPLETED:
+          case INIT_COMPLETED:
             opl.poolInitCompleted(evt);
             break;
-          case ObjectPoolEvent.CHECKOUT:
+          case CHECKOUT:
             opl.poolCheckOut(evt);
             break;
-          case ObjectPoolEvent.CHECKIN:
+          case CHECKIN:
             opl.poolCheckIn(evt);
             break;
-          case ObjectPoolEvent.VALIDATION_ERROR:
+          case VALIDATION_ERROR:
             opl.validationError(evt);
             break;
-          case ObjectPoolEvent.MAX_POOL_LIMIT_REACHED:
+          case MAX_POOL_LIMIT_REACHED:
             opl.maxPoolLimitReached(evt);
             break;
-          case ObjectPoolEvent.MAX_POOL_LIMIT_EXCEEDED:
+          case MAX_POOL_LIMIT_EXCEEDED:
             opl.maxPoolLimitExceeded(evt);
             break;
-          case ObjectPoolEvent.MAX_SIZE_LIMIT_REACHED:
+          case MAX_SIZE_LIMIT_REACHED:
             opl.maxSizeLimitReached(evt);
             break;
-          case ObjectPoolEvent.MAX_SIZE_LIMIT_ERROR:
+          case MAX_SIZE_LIMIT_ERROR:
             opl.maxSizeLimitError(evt);
             break;
-          case ObjectPoolEvent.PARAMETERS_CHANGED:
+          case PARAMETERS_CHANGED:
             opl.poolParametersChanged(evt);
             break;
-          case ObjectPoolEvent.POOL_FLUSHED:
+          case POOL_FLUSHED:
             opl.poolFlushed(evt);
             break;
-          case ObjectPoolEvent.POOL_RELEASED:
+          case POOL_RELEASED:
             opl.poolReleased(evt);
             break;
           default:

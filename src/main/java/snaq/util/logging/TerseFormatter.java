@@ -56,7 +56,7 @@ import java.util.logging.SimpleFormatter;
  * <pre>
  *     &lt;handler&gt;.formatter=snaq.util.logging.TerseFormatter
  * </pre>
-<p>NOTE: this class is NOT thread-safe.
+ * <p>NOTE: this class is NOT thread-safe.
  *
  * @author Giles Winstanley
  * @deprecated This class may be removed in future, and users are encouraged to use SLF4J logging.

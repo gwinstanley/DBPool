@@ -146,6 +146,7 @@ import snaq.util.logging.LogUtil;
  * &lt;poolname&gt;.cache                Whether to cache Statements (default:true)
  * &lt;poolname&gt;.selection            Pool connection selection strategy ({LIFO, FIFO, RANDOM}, default:LIFO)
  * &lt;poolname&gt;.async                Whether to use asynchronous connection destruction (default:false)
+ * &lt;poolname&gt;.releaseTimeout       Timeout of pool released before forcibly destroyed (-1 if none, 0 if immediately; default:0)
  * &lt;poolname&gt;.recycleAfterRaw      Whether to turn on recycling of connections that have had delegate accessed (default:false)
  * &lt;poolname&gt;.listenerN            Class name of {@link ConnectionPoolListener} to create (N=0, 1, ...)
  * &lt;poolname&gt;.listenerN.XXX        Passes property XXX and its value to the numbered listener
@@ -189,6 +190,8 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
   private static Thread shutdownHookGlobal = null;
   /** Thread to perform shutdown of this pool manager. */
   private Thread shutdownHook = null;
+  /** Timeouts for pools to release connections before being forcibly destroyed (milliseconds). */
+  private Map<ConnectionPool,Long> mapTimeout = new HashMap<>();
   /** Flag indicating whether this pool manager instance has been released. */
   private boolean released = false;
   /** Map of {@link ConnectionPool} instances being held. */
@@ -436,7 +439,7 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
           logShared.warn("Unable to find the properties file " + propsFile.getAbsolutePath(), iox);
         else
           logShared.warn("Error loading the properties file " + propsFile.getAbsolutePath(), iox);
-        return null;
+        throw iox;
       }
     }
     return cpm;
@@ -732,6 +735,11 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
     }
   }
 
+  private static final String trimOrNull(String s)
+  {
+    return s == null ? s : s.trim();
+  }
+
   /**
    * Creates instances of {@link ConnectionPool} based on the {@link Properties}
    * object. The supplied properties have been pre-processed by the
@@ -755,26 +763,21 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
         }
 
         // "Standard" properties.
-        String user = props.getProperty(poolName + ".user");
-        user = (user != null) ? user.trim() : user;
-        String pass = props.getProperty(poolName + ".password");
-        pass = (pass != null) ? pass.trim() : pass;
+        String user = trimOrNull(props.getProperty(poolName + ".user"));
+        String pass = trimOrNull(props.getProperty(poolName + ".password"));
         String pMinPool = props.getProperty(poolName + ".minpool", "0").trim();
         String pMaxPool = props.getProperty(poolName + ".maxpool", "0").trim();
-        String pMaxSize = props.getProperty(poolName + ".maxsize");
-        if (pMaxSize != null) pMaxSize = pMaxSize.trim();
-        String pIdleTimeout = props.getProperty(poolName + ".idletimeout");
-        if (pIdleTimeout != null) pIdleTimeout = pIdleTimeout.trim();
-        String validator = props.getProperty(poolName + ".validator");
-        validator = (validator != null) ? validator.trim() : validator;
-        String validatorQuery = props.getProperty(poolName + ".validatorQuery");
-        validatorQuery = (validatorQuery != null) ? validatorQuery.trim() : validatorQuery;
-        String decoder = props.getProperty(poolName + ".decoder");
+        String pMaxSize = trimOrNull(props.getProperty(poolName + ".maxsize"));
+        String pIdleTimeout = trimOrNull(props.getProperty(poolName + ".idletimeout"));
+        String validator = trimOrNull(props.getProperty(poolName + ".validator"));
+        String validatorQuery = trimOrNull(props.getProperty(poolName + ".validatorQuery"));
+        String decoder = trimOrNull(props.getProperty(poolName + ".decoder"));
         String pInit = props.getProperty(poolName + ".init", "0").trim();
         // "Advanced" properties.
         boolean noCache = props.getProperty(poolName + ".cache", "true").trim().equalsIgnoreCase("false");
         String selection = props.getProperty(poolName + ".selection");
         boolean async = props.getProperty(poolName + ".async", "false").trim().equalsIgnoreCase("true");
+        String pReleaseTimeout = trimOrNull(props.getProperty(poolName + ".releasetimeout"));
         boolean recycleAfterDelegateUse = props.getProperty(poolName + ".recycleafterdelegateuse", "false").trim().equalsIgnoreCase("true");
         boolean mbean = props.getProperty(poolName + ".mbean", "false").trim().equalsIgnoreCase("true");
         // Custom logging properties.
@@ -852,6 +855,17 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
           log_warn("Invalid idleTimeout value " + pIdleTimeout + " for " + poolName);
           idleTimeout = 0;
         }
+        // Validate release timeout.
+        long releaseTimeout = 0;
+        try
+        {
+          releaseTimeout = Integer.parseInt(pReleaseTimeout);
+        }
+        catch (NumberFormatException nfx)
+        {
+          log_warn("Invalid releaseTimeout value " + pReleaseTimeout + " for " + poolName);
+          releaseTimeout = 0;
+        }
 
         // Validate pool size logic.
         minPool = Math.max(minPool, 0);  // (ensure pMin >= 0).
@@ -859,7 +873,8 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
         maxSize = Math.max(maxSize, 0);  // (ensure mSize >= 0).
         if (maxSize > 0)  // (if mSize > 0, ensure mSize >= pMax).
           maxSize = Math.max(maxSize, maxPool);
-        idleTimeout = Math.max(idleTimeout, 0);  // (ensure timeout >= 0).
+        idleTimeout = Math.max(idleTimeout, 0);  // (ensure idleTimeout >= 0).
+        releaseTimeout = Math.min(Math.max(releaseTimeout, -1), 86400000);  // (ensure 86400000 >= releaseTimeout >= -1).
 
         // Create connection pool.
         ConnectionPool pool = null;
@@ -919,6 +934,9 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
         if (async)
           log_info("Enabling asynchronous destruction on pool " + poolName);
         pool.setAsyncDestroy(async);
+        if (releaseTimeout > -1)
+          log_info(String.format("Enabling release timeout (%dms) on pool %s", releaseTimeout, poolName));
+        mapTimeout.put(pool, releaseTimeout);
         if (recycleAfterDelegateUse)
           log_info("Enabling recycling after raw connection use on pool " + poolName);
         pool.setRecycleAfterDelegateUse(recycleAfterDelegateUse);
@@ -1232,7 +1250,11 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
     {
       for (ConnectionPool pool : pools.values())
       {
-        pool.releaseForcibly();
+        Long timeout = mapTimeout.get(pool);
+        if (timeout == null)
+          pool.releaseImmediately();
+        else
+          pool.release(timeout);
       }
     }
 
@@ -1270,7 +1292,10 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
     return this.released;
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   */
   protected void log_error(String s)
   {
     String msg = name + ": " + s;
@@ -1279,7 +1304,11 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
       logUtil.log(msg);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   * @param throwable {@code Throwable} instance to log
+   */
   protected void log_error(String s, Throwable throwable)
   {
     String msg = name + ": " + s;
@@ -1288,7 +1317,10 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
       logUtil.log(msg, throwable);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   */
   protected void log_warn(String s)
   {
     String msg = name + ": " + s;
@@ -1297,7 +1329,11 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
       logUtil.log(msg);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   * @param throwable {@code Throwable} instance to log
+   */
   protected void log_warn(String s, Throwable throwable)
   {
     String msg = name + ": " + s;
@@ -1306,7 +1342,10 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
       logUtil.log(msg, throwable);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   */
   protected void log_info(String s)
   {
     String msg = name + ": " + s;
@@ -1315,7 +1354,11 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
       logUtil.log(msg);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   * @param throwable {@code Throwable} instance to log
+   */
   protected void log_info(String s, Throwable throwable)
   {
     String msg = name + ": " + s;
@@ -1324,7 +1367,10 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
       logUtil.log(msg, throwable);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   */
   protected void log_debug(String s)
   {
     String msg = name + ": " + s;
@@ -1333,7 +1379,11 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
       logUtil.debug(msg);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   * @param throwable {@code Throwable} instance to log
+   */
   protected void log_debug(String s, Throwable throwable)
   {
     String msg = name + ": " + s;
@@ -1342,13 +1392,20 @@ public final class ConnectionPoolManager implements Comparable<ConnectionPoolMan
       logUtil.debug(msg, throwable);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   */
   protected void log_trace(String s)
   {
     logger.trace(name + ": " + s);
   }
 
-  /** Logging relay method (to prefix pool name). */
+  /**
+   * Logging relay method (to prefix pool name).
+   * @param s string to log
+   * @param throwable {@code Throwable} instance to log
+   */
   protected void log_trace(String s, Throwable throwable)
   {
     logger.trace(name + ": " + s, throwable);

@@ -43,6 +43,7 @@ import java.util.Enumeration;
 import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.naming.Context;
 import javax.naming.Name;
 import javax.naming.NamingException;
@@ -61,6 +62,8 @@ public class DBPoolDataSourceFactory implements ObjectFactory
 {
   /** SLF4J shared instance for writing log entries. */
   protected static final Logger logger = LoggerFactory.getLogger(DBPoolDataSourceFactory.class);
+  /** Counter for numbering unnamed DataSource instances. */
+  private static final AtomicInteger counter = new AtomicInteger(0);
 
   /**
    * Creates a {@link DBPoolDataSource} instance using the location or reference information specified.
@@ -99,7 +102,17 @@ public class DBPoolDataSourceFactory implements ObjectFactory
 
     // Create instance of DataSource.
     DBPoolDataSource ds = new DBPoolDataSource();
-    ds.registerShutdownHook();
+    if (name != null)
+    {
+      StringBuilder sb = new StringBuilder();
+      for (Enumeration<String> e = name.getAll(); e.hasMoreElements(); )
+        sb.append(e.nextElement());
+      ds.setName(sb.toString());
+    }
+    else
+    {
+      ds.setName(Integer.toString(counter.getAndIncrement()));
+    }
 
     // Extract DataSource parameters from environment.
     Reference ref = (Reference)obj;

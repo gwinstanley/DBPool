@@ -41,6 +41,7 @@ import java.util.ArrayList;
 import java.util.EventListener;
 import java.util.EventObject;
 import java.util.List;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -75,6 +76,8 @@ public class EventDispatcher<L extends EventListener, E extends EventObject> ext
 
   public EventDispatcher(List<L> listeners, EventNotifier<L,E> notifier)
   {
+    Objects.requireNonNull(listeners);
+    Objects.requireNonNull(notifier);
     this.listeners = listeners;
     this.notifier = notifier;
     this.setDaemon(true);

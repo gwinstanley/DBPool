@@ -95,7 +95,7 @@ public class PoolTracer<T extends Reusable> implements ObjectPoolListener<T>
    * for writing the log.
    * @param pool {@code ObjectPool} for which to trace activity
    * @param file {@code File} to which to log trace activity
-   * @throws FileNotFoundException
+   * @throws FileNotFoundException if unable to find specified file
    */
   public PoolTracer(ObjectPool<T> pool, File file) throws FileNotFoundException
   {
@@ -106,7 +106,7 @@ public class PoolTracer<T extends Reusable> implements ObjectPoolListener<T>
    * Creates a new ObjectPoolAudit which logs to the specified File.
    * @param pool {@code ObjectPool} for which to trace activity
    * @param filename name of file to which to log trace activity
-   * @throws FileNotFoundException
+   * @throws FileNotFoundException if unable to find specified file
    */
   public PoolTracer(ObjectPool<T> pool, String filename) throws FileNotFoundException
   {
@@ -118,7 +118,7 @@ public class PoolTracer<T extends Reusable> implements ObjectPoolListener<T>
    * Note: if the file already exists it is truncated to zero-length, then used
    * for writing the log.
    * @param props {@code Properties} defining trace activity
-   * @throws FileNotFoundException
+   * @throws FileNotFoundException if unable to find file specified in properties
    */
   public PoolTracer(Properties props) throws FileNotFoundException
   {

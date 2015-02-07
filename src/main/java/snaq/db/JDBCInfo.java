@@ -163,7 +163,7 @@ public class JDBCInfo
       k.getMethod("setSchema", String.class);
       return true;
     }
-    catch (ClassNotFoundException | NoSuchMethodException | SecurityException ex)
+    catch (Exception ex)
     {
       return false;
     }

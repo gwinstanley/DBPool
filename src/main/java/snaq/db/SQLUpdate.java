@@ -157,7 +157,7 @@ public class SQLUpdate implements AutoCloseable
   /**
    * Issues a statement to the database.
    * @param sql SQL command to issue
-   * @throws SQLException
+   * @throws SQLException if thrown during SQL execution
    */
   public void doStatement(String sql) throws SQLException
   {
@@ -177,7 +177,7 @@ public class SQLUpdate implements AutoCloseable
    * Loads a text file into a string.
    * @param f {@link File} containing text to load
    * @return {@link String} containing the text loaded from the specified file
-   * @throws IOException
+   * @throws IOException if thrown during file load
    */
   public final static String loadTextFile(File f) throws IOException
   {
